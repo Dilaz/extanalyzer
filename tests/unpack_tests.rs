@@ -1,4 +1,4 @@
-use extanalyzer::unpack::{detect_format, ExtensionFormat};
+use extanalyzer::unpack::{ExtensionFormat, detect_format};
 
 #[test]
 fn test_detect_crx_format() {

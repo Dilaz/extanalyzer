@@ -1,4 +1,4 @@
-use extanalyzer::analyze::manifest::{parse_manifest, analyze_permissions};
+use extanalyzer::analyze::manifest::{analyze_permissions, parse_manifest};
 use extanalyzer::models::Severity;
 
 #[test]
@@ -42,5 +42,9 @@ fn test_analyze_safe_permissions() {
     let findings = analyze_permissions(&manifest);
 
     // Should not find critical or high issues
-    assert!(!findings.iter().any(|f| f.severity == Severity::Critical || f.severity == Severity::High));
+    assert!(
+        !findings
+            .iter()
+            .any(|f| f.severity == Severity::Critical || f.severity == Severity::High)
+    );
 }

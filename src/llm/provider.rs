@@ -1,4 +1,6 @@
 use anyhow::Result;
+use rig::client::ProviderClient;
+use std::str::FromStr;
 
 #[derive(Debug, Clone)]
 pub enum LlmProvider {
@@ -8,8 +10,10 @@ pub enum LlmProvider {
     Ollama,
 }
 
-impl LlmProvider {
-    pub fn from_str(s: &str) -> Result<Self> {
+impl FromStr for LlmProvider {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
             "openai" => Ok(LlmProvider::OpenAi),
             "anthropic" => Ok(LlmProvider::Anthropic),

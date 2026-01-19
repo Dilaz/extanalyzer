@@ -5,10 +5,7 @@ fn test_atob_decoding() {
     let result = execute_snippet("atob('aGVsbG8=')", 1000);
     assert!(result.error.is_none(), "Error: {:?}", result.error);
     // The prelude may use String.fromCharCode internally, so we check for atob specifically
-    let atob_decode = result
-        .decoded_strings
-        .iter()
-        .find(|d| d.function == "atob");
+    let atob_decode = result.decoded_strings.iter().find(|d| d.function == "atob");
     assert!(
         atob_decode.is_some(),
         "Expected atob decode, got: {:?}",
@@ -23,10 +20,7 @@ fn test_atob_decoding() {
 fn test_btoa_encoding() {
     let result = execute_snippet("btoa('hello')", 1000);
     assert!(result.error.is_none(), "Error: {:?}", result.error);
-    let btoa_decode = result
-        .decoded_strings
-        .iter()
-        .find(|d| d.function == "btoa");
+    let btoa_decode = result.decoded_strings.iter().find(|d| d.function == "btoa");
     assert!(
         btoa_decode.is_some(),
         "Expected btoa decode, got: {:?}",
@@ -154,10 +148,7 @@ fn test_combined_obfuscation() {
     assert!(result.error.is_none(), "Error: {:?}", result.error);
 
     // Should decode the URL
-    let atob_decode = result
-        .decoded_strings
-        .iter()
-        .find(|d| d.function == "atob");
+    let atob_decode = result.decoded_strings.iter().find(|d| d.function == "atob");
     assert!(
         atob_decode.is_some(),
         "Expected atob decode, got: {:?}",

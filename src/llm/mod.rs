@@ -1,5 +1,5 @@
-pub mod provider;
 pub mod agents;
+pub mod provider;
 
-pub use provider::{LlmProvider, LlmClient, create_provider};
-pub use agents::{analyze_with_llm, AnalysisTask};
+pub use agents::{AnalysisTask, analyze_with_llm};
+pub use provider::{LlmClient, LlmProvider, create_provider};

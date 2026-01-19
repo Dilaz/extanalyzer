@@ -8,7 +8,8 @@ fn test_detect_chrome_extension_id() {
 
 #[test]
 fn test_detect_chrome_url() {
-    let input = "https://chromewebstore.google.com/detail/metamask/nkbihfbeogaeaoehlefnkodbefgpgknn";
+    let input =
+        "https://chromewebstore.google.com/detail/metamask/nkbihfbeogaeaoehlefnkodbefgpgknn";
     assert!(matches!(detect_input(input), InputType::ChromeUrl(_)));
 }
 
@@ -34,5 +35,8 @@ fn test_detect_local_xpi() {
 fn test_detect_firefox_slug() {
     // Short strings that aren't 32 chars and not a path
     let input = "ublock-origin";
-    assert_eq!(detect_input(input), InputType::FirefoxSlug(input.to_string()));
+    assert_eq!(
+        detect_input(input),
+        InputType::FirefoxSlug(input.to_string())
+    );
 }

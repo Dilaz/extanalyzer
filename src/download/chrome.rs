@@ -1,6 +1,6 @@
+use super::Downloader;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use super::Downloader;
 
 pub struct ChromeDownloader {
     client: reqwest::Client,
@@ -37,7 +37,8 @@ impl Downloader for ChromeDownloader {
     async fn download(&self, extension_id: &str) -> Result<Vec<u8>> {
         let url = self.build_download_url(extension_id);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .send()
             .await

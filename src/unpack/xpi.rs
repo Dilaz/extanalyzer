@@ -5,10 +5,10 @@ use zip::ZipArchive;
 
 pub fn extract_zip(data: &[u8], output_dir: &Path) -> Result<()> {
     let cursor = Cursor::new(data);
-    let mut archive = ZipArchive::new(cursor)
-        .context("Failed to read ZIP archive")?;
+    let mut archive = ZipArchive::new(cursor).context("Failed to read ZIP archive")?;
 
-    archive.extract(output_dir)
+    archive
+        .extract(output_dir)
         .context("Failed to extract ZIP contents")?;
 
     Ok(())

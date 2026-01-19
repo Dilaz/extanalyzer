@@ -34,10 +34,10 @@ pub fn extract_crx(data: &[u8], output_dir: &Path) -> Result<()> {
     let zip_data = &data[zip_start..];
 
     let cursor = Cursor::new(zip_data);
-    let mut archive = ZipArchive::new(cursor)
-        .context("Failed to read ZIP from CRX")?;
+    let mut archive = ZipArchive::new(cursor).context("Failed to read ZIP from CRX")?;
 
-    archive.extract(output_dir)
+    archive
+        .extract(output_dir)
         .context("Failed to extract CRX contents")?;
 
     Ok(())

@@ -1,5 +1,5 @@
 use extanalyzer::analyze::javascript::analyze_javascript;
-use extanalyzer::models::{Severity, Category};
+use extanalyzer::models::{Category, Severity};
 use std::path::PathBuf;
 
 #[test]
@@ -11,10 +11,11 @@ fn test_detect_eval_usage() {
 
     let (findings, _) = analyze_javascript(code, &PathBuf::from("test.js"));
 
-    assert!(findings.iter().any(|f|
-        f.severity == Severity::Critical &&
-        f.title.contains("eval")
-    ));
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.severity == Severity::Critical && f.title.contains("eval"))
+    );
 }
 
 #[test]
@@ -41,10 +42,11 @@ fn test_detect_chrome_api() {
 
     let (findings, _) = analyze_javascript(code, &PathBuf::from("test.js"));
 
-    assert!(findings.iter().any(|f|
-        f.category == Category::ApiUsage &&
-        f.title.contains("cookies")
-    ));
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.category == Category::ApiUsage && f.title.contains("cookies"))
+    );
 }
 
 #[test]

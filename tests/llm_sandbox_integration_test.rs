@@ -22,7 +22,11 @@ fn test_real_world_obfuscation_pattern() {
     "#;
 
     let result = execute_snippet(code, 2000);
-    assert!(result.error.is_none(), "Unexpected error: {:?}", result.error);
+    assert!(
+        result.error.is_none(),
+        "Unexpected error: {:?}",
+        result.error
+    );
 
     // Should decode the URL
     assert!(
@@ -61,7 +65,11 @@ fn test_nested_obfuscation() {
     "#;
 
     let result = execute_snippet(code, 2000);
-    assert!(result.error.is_none(), "Unexpected error: {:?}", result.error);
+    assert!(
+        result.error.is_none(),
+        "Unexpected error: {:?}",
+        result.error
+    );
 
     // Should have both decodings
     assert!(
@@ -81,10 +89,7 @@ fn test_nested_obfuscation() {
     );
 
     // Should ultimately reveal the URL via atob
-    let atob_decode = result
-        .decoded_strings
-        .iter()
-        .find(|d| d.function == "atob");
+    let atob_decode = result.decoded_strings.iter().find(|d| d.function == "atob");
     assert!(atob_decode.is_some(), "Should have atob decode");
     assert_eq!(
         atob_decode.unwrap().output,
@@ -154,9 +159,7 @@ fn test_timeout_protection() {
     assert!(result.error.is_some(), "Should have timeout error");
     let error = result.error.as_ref().unwrap();
     assert!(
-        error.contains("Timeout")
-            || error.contains("interrupted")
-            || error.contains("Exception"),
+        error.contains("Timeout") || error.contains("interrupted") || error.contains("Exception"),
         "Error should indicate timeout/interrupt, got: {}",
         error
     );
@@ -173,7 +176,11 @@ fn test_eval_with_obfuscated_code() {
     "#;
 
     let result = execute_snippet(code, 2000);
-    assert!(result.error.is_none(), "Unexpected error: {:?}", result.error);
+    assert!(
+        result.error.is_none(),
+        "Unexpected error: {:?}",
+        result.error
+    );
 
     // Should decode the payload
     let fromcharcode_decode = result
@@ -212,7 +219,11 @@ fn test_multiple_api_calls() {
     "#;
 
     let result = execute_snippet(code, 2000);
-    assert!(result.error.is_none(), "Unexpected error: {:?}", result.error);
+    assert!(
+        result.error.is_none(),
+        "Unexpected error: {:?}",
+        result.error
+    );
 
     // Should have all three types of API calls
     assert!(
@@ -252,7 +263,11 @@ fn test_chrome_extension_api_tracing() {
     "#;
 
     let result = execute_snippet(code, 2000);
-    assert!(result.error.is_none(), "Unexpected error: {:?}", result.error);
+    assert!(
+        result.error.is_none(),
+        "Unexpected error: {:?}",
+        result.error
+    );
 
     // Should trace chrome API calls
     assert!(
@@ -292,7 +307,11 @@ fn test_hex_string_decoding() {
     "#;
 
     let result = execute_snippet(code, 2000);
-    assert!(result.error.is_none(), "Unexpected error: {:?}", result.error);
+    assert!(
+        result.error.is_none(),
+        "Unexpected error: {:?}",
+        result.error
+    );
 
     // The fetch should receive the decoded URL
     let fetch_call = result.api_calls.iter().find(|c| c.function == "fetch");

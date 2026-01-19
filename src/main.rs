@@ -3,13 +3,18 @@ use clap::Parser;
 use colored::*;
 use std::path::PathBuf;
 
-use extanalyzer::input::{detect_input, InputType, extract_chrome_id_from_url, extract_firefox_slug_from_url};
+use extanalyzer::analyze::{
+    self,
+    manifest::{self, resolve_i18n},
+};
 use extanalyzer::download::{Downloader, chrome::ChromeDownloader, firefox::FirefoxDownloader};
-use extanalyzer::unpack;
-use extanalyzer::analyze::{self, manifest::{self, resolve_i18n}};
-use extanalyzer::llm::{LlmProvider, create_provider, analyze_with_llm, AnalysisTask};
+use extanalyzer::input::{
+    InputType, detect_input, extract_chrome_id_from_url, extract_firefox_slug_from_url,
+};
+use extanalyzer::llm::{AnalysisTask, LlmProvider, analyze_with_llm, create_provider};
+use extanalyzer::models::{Extension, ExtensionFile, ExtensionSource, FileType};
 use extanalyzer::output::print_analysis_result;
-use extanalyzer::models::{Extension, ExtensionSource, ExtensionFile, FileType};
+use extanalyzer::unpack;
 
 #[derive(Parser, Debug)]
 #[command(name = "extanalyzer")]
@@ -58,8 +63,7 @@ async fn main() -> Result<()> {
 
     if let Some(ref batch_file) = args.batch {
         // Batch mode
-        let content = std::fs::read_to_string(&batch_file)
-            .context("Failed to read batch file")?;
+        let content = std::fs::read_to_string(batch_file).context("Failed to read batch file")?;
 
         for line in content.lines() {
             let line = line.trim();
@@ -148,7 +152,10 @@ async fn analyze_single(args: &Args, input: &str) -> Result<()> {
         let manifest_content = std::fs::read_to_string(&manifest_path)?;
         let parsed_manifest = manifest::parse_manifest(&manifest_content)?;
         // Resolve i18n placeholders like __MSG_appName__
-        extension.name = parsed_manifest.name.as_ref().map(|n| resolve_i18n(n, extract_path));
+        extension.name = parsed_manifest
+            .name
+            .as_ref()
+            .map(|n| resolve_i18n(n, extract_path));
         extension.version = parsed_manifest.version.clone();
         extension.manifest = Some(parsed_manifest);
     }
@@ -164,32 +171,39 @@ async fn analyze_single(args: &Args, input: &str) -> Result<()> {
     if !args.no_llm {
         println!("{}", "Running LLM analysis...".bright_black());
 
-        match LlmProvider::from_str(&args.llm) {
-            Ok(provider) => {
-                match create_provider(&provider) {
-                    Ok(client) => {
-                        let tasks = vec![
-                            AnalysisTask::ManifestReview,
-                            AnalysisTask::ScriptAnalysis,
-                            AnalysisTask::EndpointAnalysis,
-                            AnalysisTask::FinalSummary,
-                        ];
+        match args.llm.parse::<LlmProvider>() {
+            Ok(provider) => match create_provider(&provider) {
+                Ok(client) => {
+                    let tasks = vec![
+                        AnalysisTask::ManifestReview,
+                        AnalysisTask::ScriptAnalysis,
+                        AnalysisTask::EndpointAnalysis,
+                        AnalysisTask::FinalSummary,
+                    ];
 
-                        match analyze_with_llm(&client, &extension, &result.findings, &result.endpoints, tasks, args.model.as_deref()).await {
-                            Ok(llm_result) => {
-                                result.findings.extend(llm_result.findings);
-                                result.llm_summary = llm_result.summary;
-                            }
-                            Err(e) => {
-                                eprintln!("{} LLM analysis failed: {}", "Warning:".yellow(), e);
-                            }
+                    match analyze_with_llm(
+                        &client,
+                        &extension,
+                        &result.findings,
+                        &result.endpoints,
+                        tasks,
+                        args.model.as_deref(),
+                    )
+                    .await
+                    {
+                        Ok(llm_result) => {
+                            result.findings.extend(llm_result.findings);
+                            result.llm_summary = llm_result.summary;
+                        }
+                        Err(e) => {
+                            eprintln!("{} LLM analysis failed: {}", "Warning:".yellow(), e);
                         }
                     }
-                    Err(e) => {
-                        eprintln!("{} Could not create LLM client: {}", "Warning:".yellow(), e);
-                    }
                 }
-            }
+                Err(e) => {
+                    eprintln!("{} Could not create LLM client: {}", "Warning:".yellow(), e);
+                }
+            },
             Err(e) => {
                 eprintln!("{} {}", "Warning:".yellow(), e);
             }
@@ -206,7 +220,11 @@ async fn analyze_single(args: &Args, input: &str) -> Result<()> {
     if !args.keep_files {
         drop(temp_dir);
     } else {
-        println!("{} {}", "Files kept at:".bright_black(), extract_path.display());
+        println!(
+            "{} {}",
+            "Files kept at:".bright_black(),
+            extract_path.display()
+        );
         // Prevent cleanup by moving out of temp_dir
         let _ = temp_dir.keep();
     }
@@ -217,16 +235,20 @@ async fn analyze_single(args: &Args, input: &str) -> Result<()> {
 fn collect_files(dir: &std::path::Path) -> Result<Vec<ExtensionFile>> {
     let mut files = Vec::new();
 
-    for entry in walkdir::WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
+    for entry in walkdir::WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         if entry.file_type().is_file() {
             let path = entry.path();
-            let ext = path.extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("");
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
             let file_type = FileType::from_extension(ext);
 
-            let content = if matches!(file_type, FileType::JavaScript | FileType::Json | FileType::Html) {
+            let content = if matches!(
+                file_type,
+                FileType::JavaScript | FileType::Json | FileType::Html
+            ) {
                 std::fs::read_to_string(path).ok()
             } else {
                 None

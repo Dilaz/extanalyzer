@@ -60,8 +60,10 @@ pub fn run_in_sandbox(code: &str, timeout_ms: u64) -> SandboxResult {
             if error_msg.contains("interrupted")
                 || (start.elapsed() > timeout && error_msg.contains("Exception"))
             {
-                result.error =
-                    Some(format!("Timeout after {}ms (possible infinite loop)", timeout_ms));
+                result.error = Some(format!(
+                    "Timeout after {}ms (possible infinite loop)",
+                    timeout_ms
+                ));
             } else if result.error.is_none() {
                 result.error = Some(error_msg);
             }
@@ -161,10 +163,7 @@ mod tests {
         assert!(result.error.is_none(), "Error: {:?}", result.error);
         // The prelude's fallback base64 decode uses String.fromCharCode internally,
         // so we may get multiple decoded strings. Check that atob is among them.
-        let atob_decode = result
-            .decoded_strings
-            .iter()
-            .find(|d| d.function == "atob");
+        let atob_decode = result.decoded_strings.iter().find(|d| d.function == "atob");
         assert!(
             atob_decode.is_some(),
             "Expected atob decode, got: {:?}",
@@ -187,10 +186,12 @@ mod tests {
     fn test_chrome_api_tracing() {
         let result = run_in_sandbox("chrome.cookies.getAll({})", 1000);
         assert!(result.error.is_none(), "Error: {:?}", result.error);
-        assert!(result
-            .api_calls
-            .iter()
-            .any(|c| c.function.contains("chrome.cookies")));
+        assert!(
+            result
+                .api_calls
+                .iter()
+                .any(|c| c.function.contains("chrome.cookies"))
+        );
     }
 
     #[test]
@@ -222,19 +223,23 @@ mod tests {
     fn test_string_from_char_code_tracing() {
         let result = run_in_sandbox("String.fromCharCode(104, 101, 108, 108, 111)", 1000);
         assert!(result.error.is_none(), "Error: {:?}", result.error);
-        assert!(result
-            .decoded_strings
-            .iter()
-            .any(|d| d.function == "String.fromCharCode" && d.output == "hello"));
+        assert!(
+            result
+                .decoded_strings
+                .iter()
+                .any(|d| d.function == "String.fromCharCode" && d.output == "hello")
+        );
     }
 
     #[test]
     fn test_localstorage_tracing() {
         let result = run_in_sandbox("localStorage.setItem('key', 'value')", 1000);
         assert!(result.error.is_none(), "Error: {:?}", result.error);
-        assert!(result
-            .api_calls
-            .iter()
-            .any(|c| c.function == "localStorage.setItem"));
+        assert!(
+            result
+                .api_calls
+                .iter()
+                .any(|c| c.function == "localStorage.setItem")
+        );
     }
 }

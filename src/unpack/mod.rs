@@ -7,7 +7,7 @@ use std::path::Path;
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExtensionFormat {
     Crx3,
-    Zip,  // XPI files are plain ZIP
+    Zip, // XPI files are plain ZIP
     Unknown,
 }
 

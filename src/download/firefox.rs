@@ -1,6 +1,6 @@
+use super::Downloader;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use super::Downloader;
 
 pub struct FirefoxDownloader {
     client: reqwest::Client,
@@ -35,7 +35,8 @@ impl Downloader for FirefoxDownloader {
     async fn download(&self, slug: &str) -> Result<Vec<u8>> {
         let url = self.build_download_url(slug);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .send()
             .await

@@ -1,6 +1,6 @@
-use std::path::Path;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use std::path::Path;
 
 static CHROME_ID_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[a-z]{32}$").unwrap());
 static CHROME_ID_EXTRACT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[a-z]{32}").unwrap());
@@ -25,7 +25,9 @@ pub fn detect_input(input: &str) -> InputType {
     }
 
     // Check for Chrome Web Store URL (case-insensitive)
-    if input_lower.contains("chromewebstore.google.com") || input_lower.contains("chrome.google.com/webstore") {
+    if input_lower.contains("chromewebstore.google.com")
+        || input_lower.contains("chrome.google.com/webstore")
+    {
         return InputType::ChromeUrl(input.to_string());
     }
 
@@ -49,7 +51,9 @@ pub fn detect_input(input: &str) -> InputType {
 }
 
 pub fn extract_chrome_id_from_url(url: &str) -> Option<String> {
-    CHROME_ID_EXTRACT_RE.find(url).map(|m| m.as_str().to_string())
+    CHROME_ID_EXTRACT_RE
+        .find(url)
+        .map(|m| m.as_str().to_string())
 }
 
 pub fn extract_firefox_slug_from_url(url: &str) -> Option<String> {
@@ -63,7 +67,8 @@ mod tests {
 
     #[test]
     fn test_extract_chrome_id() {
-        let url = "https://chromewebstore.google.com/detail/metamask/nkbihfbeogaeaoehlefnkodbefgpgknn";
+        let url =
+            "https://chromewebstore.google.com/detail/metamask/nkbihfbeogaeaoehlefnkodbefgpgknn";
         assert_eq!(
             extract_chrome_id_from_url(url),
             Some("nkbihfbeogaeaoehlefnkodbefgpgknn".to_string())
@@ -82,7 +87,8 @@ mod tests {
     #[test]
     fn test_uppercase_url_detection() {
         // Chrome Web Store URL with uppercase
-        let chrome_url = "HTTPS://CHROMEWEBSTORE.GOOGLE.COM/detail/extension/nkbihfbeogaeaoehlefnkodbefgpgknn";
+        let chrome_url =
+            "HTTPS://CHROMEWEBSTORE.GOOGLE.COM/detail/extension/nkbihfbeogaeaoehlefnkodbefgpgknn";
         assert_eq!(
             detect_input(chrome_url),
             InputType::ChromeUrl(chrome_url.to_string())
