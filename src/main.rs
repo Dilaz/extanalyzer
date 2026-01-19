@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use extanalyzer::input::{detect_input, InputType, extract_chrome_id_from_url, extract_firefox_slug_from_url};
 use extanalyzer::download::{Downloader, chrome::ChromeDownloader, firefox::FirefoxDownloader};
 use extanalyzer::unpack;
-use extanalyzer::analyze::{self, manifest};
+use extanalyzer::analyze::{self, manifest::{self, resolve_i18n}};
 use extanalyzer::llm::{LlmProvider, create_provider, analyze_with_llm, AnalysisTask};
 use extanalyzer::output::print_analysis_result;
 use extanalyzer::models::{Extension, ExtensionSource, ExtensionFile, FileType};
@@ -31,6 +31,10 @@ struct Args {
     /// LLM provider: openai, anthropic, gemini, ollama
     #[arg(long, default_value = "openai")]
     llm: String,
+
+    /// LLM model to use (defaults: gpt-4o-mini, claude-3-haiku-20240307, gemini-3-flash-preview)
+    #[arg(long)]
+    model: Option<String>,
 
     /// Skip LLM analysis (static analysis only)
     #[arg(long)]
@@ -143,7 +147,8 @@ async fn analyze_single(args: &Args, input: &str) -> Result<()> {
     if manifest_path.exists() {
         let manifest_content = std::fs::read_to_string(&manifest_path)?;
         let parsed_manifest = manifest::parse_manifest(&manifest_content)?;
-        extension.name = parsed_manifest.name.clone();
+        // Resolve i18n placeholders like __MSG_appName__
+        extension.name = parsed_manifest.name.as_ref().map(|n| resolve_i18n(n, extract_path));
         extension.version = parsed_manifest.version.clone();
         extension.manifest = Some(parsed_manifest);
     }
@@ -170,7 +175,7 @@ async fn analyze_single(args: &Args, input: &str) -> Result<()> {
                             AnalysisTask::FinalSummary,
                         ];
 
-                        match analyze_with_llm(&client, &extension, &result.findings, &result.endpoints, tasks).await {
+                        match analyze_with_llm(&client, &extension, &result.findings, &result.endpoints, tasks, args.model.as_deref()).await {
                             Ok(llm_result) => {
                                 result.findings.extend(llm_result.findings);
                                 result.llm_summary = llm_result.summary;

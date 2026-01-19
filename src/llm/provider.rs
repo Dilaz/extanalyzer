@@ -23,6 +23,7 @@ impl LlmProvider {
 pub enum LlmClient {
     OpenAi(rig::providers::openai::Client),
     Anthropic(rig::providers::anthropic::Client),
+    Gemini(rig::providers::gemini::Client),
 }
 
 pub fn create_provider(provider: &LlmProvider) -> Result<LlmClient> {
@@ -36,7 +37,8 @@ pub fn create_provider(provider: &LlmProvider) -> Result<LlmClient> {
             Ok(LlmClient::Anthropic(client))
         }
         LlmProvider::Gemini => {
-            anyhow::bail!("Gemini support not yet implemented")
+            let client = rig::providers::gemini::Client::from_env();
+            Ok(LlmClient::Gemini(client))
         }
         LlmProvider::Ollama => {
             anyhow::bail!("Ollama support not yet implemented")

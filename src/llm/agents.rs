@@ -31,6 +31,7 @@ pub async fn analyze_with_llm(
     static_findings: &[Finding],
     endpoints: &[Endpoint],
     tasks: Vec<AnalysisTask>,
+    model: Option<&str>,
 ) -> Result<LlmAnalysisResult> {
     let mut all_findings = Vec::new();
     let mut summary = None;
@@ -47,7 +48,7 @@ pub async fn analyze_with_llm(
     // Run tasks in parallel
     let futures: Vec<_> = task_prompts
         .iter()
-        .map(|(task, prompt)| run_task(client, task, prompt))
+        .map(|(task, prompt)| run_task(client, task, prompt, model))
         .collect();
 
     let results = futures::future::join_all(futures).await;
@@ -79,20 +80,34 @@ pub async fn analyze_with_llm(
     })
 }
 
+/// Default models for each provider
+const DEFAULT_OPENAI_MODEL: &str = "gpt-4o-mini";
+const DEFAULT_ANTHROPIC_MODEL: &str = "claude-3-haiku-20240307";
+const DEFAULT_GEMINI_MODEL: &str = "gemini-3-flash-preview";
+
 /// Run a single analysis task
 async fn run_task(
     client: &LlmClient,
     _task: &AnalysisTask,
     prompt: &str,
+    model: Option<&str>,
 ) -> Result<String> {
     match client {
         LlmClient::OpenAi(c) => {
-            let agent = c.agent("gpt-4o-mini").build();
+            let model_name = model.unwrap_or(DEFAULT_OPENAI_MODEL);
+            let agent = c.agent(model_name).build();
             let response = agent.prompt(prompt).await?;
             Ok(response)
         }
         LlmClient::Anthropic(c) => {
-            let agent = c.agent("claude-3-haiku-20240307").build();
+            let model_name = model.unwrap_or(DEFAULT_ANTHROPIC_MODEL);
+            let agent = c.agent(model_name).build();
+            let response = agent.prompt(prompt).await?;
+            Ok(response)
+        }
+        LlmClient::Gemini(c) => {
+            let model_name = model.unwrap_or(DEFAULT_GEMINI_MODEL);
+            let agent = c.agent(model_name).build();
             let response = agent.prompt(prompt).await?;
             Ok(response)
         }

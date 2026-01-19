@@ -14,7 +14,7 @@ pub struct SandboxResult {
 }
 
 /// A decoded string from obfuscation functions
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DecodedString {
     /// Function that was called (atob, fromCharCode, etc.)
     pub function: String,
@@ -25,7 +25,7 @@ pub struct DecodedString {
 }
 
 /// An API call that was traced
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiCall {
     /// Full function path (e.g., "chrome.cookies.getAll", "fetch")
     pub function: String,

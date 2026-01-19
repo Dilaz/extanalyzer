@@ -1,9 +1,68 @@
 use crate::models::{Finding, Manifest, Severity, Category};
 use anyhow::Result;
+use std::path::Path;
+use std::collections::HashMap;
+use regex::Regex;
 
 pub fn parse_manifest(json: &str) -> Result<Manifest> {
     let manifest: Manifest = serde_json::from_str(json)?;
     Ok(manifest)
+}
+
+/// Resolve __MSG_*__ placeholders in a string using the extension's _locales
+pub fn resolve_i18n(value: &str, extract_path: &Path) -> String {
+    if !value.contains("__MSG_") {
+        return value.to_string();
+    }
+
+    let re = Regex::new(r"__MSG_(\w+)__").unwrap();
+
+    // Try to load messages from _locales/en/messages.json first, then other locales
+    let locales_to_try = ["en", "en_US", "en_GB"];
+    let mut messages: Option<HashMap<String, serde_json::Value>> = None;
+
+    for locale in locales_to_try {
+        let messages_path = extract_path.join("_locales").join(locale).join("messages.json");
+        if let Ok(content) = std::fs::read_to_string(&messages_path) {
+            if let Ok(parsed) = serde_json::from_str(&content) {
+                messages = Some(parsed);
+                break;
+            }
+        }
+    }
+
+    // If no English locale found, try to find any locale
+    if messages.is_none() {
+        let locales_dir = extract_path.join("_locales");
+        if let Ok(entries) = std::fs::read_dir(&locales_dir) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    let messages_path = entry.path().join("messages.json");
+                    if let Ok(content) = std::fs::read_to_string(&messages_path) {
+                        if let Ok(parsed) = serde_json::from_str(&content) {
+                            messages = Some(parsed);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let Some(messages) = messages else {
+        return value.to_string();
+    };
+
+    re.replace_all(value, |caps: &regex::Captures| {
+        let key = &caps[1];
+        // Try both exact key and lowercase key (Chrome uses case-insensitive matching)
+        messages.get(key)
+            .or_else(|| messages.get(&key.to_lowercase()))
+            .and_then(|v| v.get("message"))
+            .and_then(|m| m.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| caps[0].to_string())
+    }).to_string()
 }
 
 pub fn analyze_permissions(manifest: &Manifest) -> Vec<Finding> {
