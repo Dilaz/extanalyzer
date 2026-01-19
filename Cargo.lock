@@ -489,6 +489,7 @@ dependencies = [
  "clap",
  "colored",
  "futures",
+ "once_cell",
  "oxc_allocator",
  "oxc_ast",
  "oxc_parser",
