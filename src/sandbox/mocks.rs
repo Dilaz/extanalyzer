@@ -20,16 +20,23 @@ function __recordCall(fn, args) {
 // Mock atob (base64 decode) - QuickJS has this built-in
 var __origAtob = typeof atob !== 'undefined' ? atob : function(s) {
     // Fallback base64 decode
-    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
     var output = '';
-    var buffer;
-    s = s.replace(/=+$/, '');
-    for (var i = 0, len = s.length; i < len; ) {
-        buffer = (chars.indexOf(s[i++]) << 18) | (chars.indexOf(s[i++]) << 12) |
-                 (chars.indexOf(s[i++]) << 6) | chars.indexOf(s[i++]);
+    // Remove padding and whitespace
+    s = s.replace(/[=\s]/g, '');
+    var len = s.length;
+    // Calculate actual output bytes based on input length
+    // 4 base64 chars = 3 bytes, remainder determines partial bytes
+    var remainder = len % 4;
+    for (var i = 0; i < len; ) {
+        var b0 = chars.indexOf(s[i++]);
+        var b1 = i < len ? chars.indexOf(s[i++]) : 0;
+        var b2 = i < len ? chars.indexOf(s[i++]) : 64;
+        var b3 = i < len ? chars.indexOf(s[i++]) : 64;
+        var buffer = (b0 << 18) | (b1 << 12) | ((b2 === 64 ? 0 : b2) << 6) | (b3 === 64 ? 0 : b3);
         output += String.fromCharCode((buffer >> 16) & 0xff);
-        if (s[i - 2] !== '=') output += String.fromCharCode((buffer >> 8) & 0xff);
-        if (s[i - 1] !== '=') output += String.fromCharCode(buffer & 0xff);
+        if (b2 !== 64) output += String.fromCharCode((buffer >> 8) & 0xff);
+        if (b3 !== 64) output += String.fromCharCode(buffer & 0xff);
     }
     return output;
 };
