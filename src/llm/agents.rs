@@ -15,6 +15,8 @@ pub enum AnalysisTask {
     EndpointAnalysis,
     /// Generate a final summary of all findings
     FinalSummary,
+    /// Deobfuscate a JavaScript snippet using sandbox execution
+    Deobfuscate(String),
 }
 
 /// Results from LLM analysis
@@ -126,6 +128,7 @@ fn build_prompt(
         AnalysisTask::ScriptAnalysis => build_script_prompt(extension),
         AnalysisTask::EndpointAnalysis => build_endpoint_prompt(endpoints),
         AnalysisTask::FinalSummary => build_summary_prompt(extension, static_findings, endpoints),
+        AnalysisTask::Deobfuscate(snippet) => build_deobfuscate_prompt(snippet),
     }
 }
 
@@ -305,6 +308,66 @@ Keep the summary concise (under 200 words)."#,
     )
 }
 
+/// Build prompt for deobfuscation analysis
+fn build_deobfuscate_prompt(snippet: &str) -> String {
+    use crate::sandbox::execute_snippet;
+
+    let result = execute_snippet(snippet, 2000);
+
+    let decoded_text = if result.decoded_strings.is_empty() {
+        "No strings were decoded.".to_string()
+    } else {
+        result
+            .decoded_strings
+            .iter()
+            .map(|d| format!("- {}('{}') → '{}'", d.function, d.input, d.output))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let calls_text = if result.api_calls.is_empty() {
+        "No API calls were made.".to_string()
+    } else {
+        result
+            .api_calls
+            .iter()
+            .map(|c| format!("- {}({})", c.function,
+                c.arguments.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ")))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let error_text = result
+        .error
+        .map(|e| format!("\n\nExecution error: {}", e))
+        .unwrap_or_default();
+
+    format!(
+        r#"I executed this JavaScript snippet in a sandbox:
+
+```javascript
+{}
+```
+
+Results:
+
+**Decoded strings:**
+{}
+
+**API calls traced:**
+{}
+
+**Final value:** {}{}
+
+Based on these results, explain what this code is trying to do. Is it malicious? What data does it access or exfiltrate?"#,
+        snippet,
+        decoded_text,
+        calls_text,
+        result.final_value.as_deref().unwrap_or("(none)"),
+        error_text
+    )
+}
+
 /// Parse LLM response to extract findings
 fn parse_findings(response: &str, task: &AnalysisTask) -> Vec<Finding> {
     let mut findings = Vec::new();
@@ -400,6 +463,7 @@ fn task_to_category(task: &AnalysisTask) -> Category {
         AnalysisTask::ScriptAnalysis => Category::ApiUsage,
         AnalysisTask::EndpointAnalysis => Category::Network,
         AnalysisTask::FinalSummary => Category::ApiUsage,
+        AnalysisTask::Deobfuscate(_) => Category::Obfuscation,
     }
 }
 
