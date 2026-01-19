@@ -139,10 +139,8 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
 
 fn print_llm_summary(summary: &str) {
     println!("{}", "── LLM Summary ──────────────────────────────────────────────".bright_black());
-
-    for line in textwrap::wrap(summary, 60) {
-        println!("  {}", line);
-    }
-
+    println!();
+    let skin = termimad::MadSkin::default();
+    skin.print_text(summary);
     println!();
 }
