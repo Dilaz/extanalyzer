@@ -1,0 +1,45 @@
+use anyhow::Result;
+
+#[derive(Debug, Clone)]
+pub enum LlmProvider {
+    OpenAi,
+    Anthropic,
+    Gemini,
+    Ollama,
+}
+
+impl LlmProvider {
+    pub fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "openai" => Ok(LlmProvider::OpenAi),
+            "anthropic" => Ok(LlmProvider::Anthropic),
+            "gemini" => Ok(LlmProvider::Gemini),
+            "ollama" => Ok(LlmProvider::Ollama),
+            _ => anyhow::bail!("Unknown LLM provider: {}", s),
+        }
+    }
+}
+
+pub enum LlmClient {
+    OpenAi(rig::providers::openai::Client),
+    Anthropic(rig::providers::anthropic::Client),
+}
+
+pub fn create_provider(provider: &LlmProvider) -> Result<LlmClient> {
+    match provider {
+        LlmProvider::OpenAi => {
+            let client = rig::providers::openai::Client::from_env();
+            Ok(LlmClient::OpenAi(client))
+        }
+        LlmProvider::Anthropic => {
+            let client = rig::providers::anthropic::Client::from_env();
+            Ok(LlmClient::Anthropic(client))
+        }
+        LlmProvider::Gemini => {
+            anyhow::bail!("Gemini support not yet implemented")
+        }
+        LlmProvider::Ollama => {
+            anyhow::bail!("Ollama support not yet implemented")
+        }
+    }
+}
