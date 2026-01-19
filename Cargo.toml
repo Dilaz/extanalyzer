@@ -45,7 +45,10 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
-[dev-dependencies]
+# File utilities
+walkdir = "2"
 tempfile = "3"
+
+[dev-dependencies]
 wiremock = "0.6"
 tokio-test = "0.4"
