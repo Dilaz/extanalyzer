@@ -1,8 +1,9 @@
 use anyhow::Result;
+use rig::client::CompletionClient;
 use rig::completion::Prompt;
 
-use crate::models::{Extension, Finding, Endpoint, Severity, Category};
 use super::LlmClient;
+use crate::models::{Category, Endpoint, Extension, Finding, Severity};
 
 /// Different types of analysis tasks that can be performed by the LLM
 #[derive(Debug, Clone)]
@@ -125,7 +126,7 @@ fn build_prompt(
 ) -> String {
     match task {
         AnalysisTask::ManifestReview => build_manifest_prompt(extension),
-        AnalysisTask::ScriptAnalysis => build_script_prompt(extension),
+        AnalysisTask::ScriptAnalysis => build_script_prompt(extension, static_findings),
         AnalysisTask::EndpointAnalysis => build_endpoint_prompt(endpoints),
         AnalysisTask::FinalSummary => build_summary_prompt(extension, static_findings, endpoints),
         AnalysisTask::Deobfuscate(snippet) => build_deobfuscate_prompt(snippet),
@@ -169,7 +170,7 @@ If no security concerns are found, respond with "NO_FINDINGS"."#,
 }
 
 /// Build prompt for script analysis
-fn build_script_prompt(extension: &Extension) -> String {
+fn build_script_prompt(extension: &Extension, static_findings: &[Finding]) -> String {
     let scripts: Vec<String> = extension
         .files
         .iter()
@@ -193,6 +194,41 @@ fn build_script_prompt(extension: &Extension) -> String {
         scripts.join("\n\n---\n\n")
     };
 
+    // Collect obfuscation findings with snippets for the LLM to deobfuscate
+    let obfuscation_snippets: Vec<String> = static_findings
+        .iter()
+        .filter(|f| f.category == Category::Obfuscation)
+        .filter_map(|f| {
+            f.code_snippet.as_ref().map(|snippet| {
+                let location = f
+                    .location
+                    .as_ref()
+                    .map(|l| {
+                        let line = l.line.map(|n| n.to_string()).unwrap_or_default();
+                        format!(" ({}:{})", l.file.display(), line)
+                    })
+                    .unwrap_or_default();
+                format!("- {}{}: ```{}```", f.title, location, snippet)
+            })
+        })
+        .collect();
+
+    let obfuscation_section = if obfuscation_snippets.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"
+
+STATIC ANALYSIS DETECTED OBFUSCATION - Please deobfuscate these snippets:
+{}
+
+For each snippet above, respond with:
+DEOBFUSCATE: <the exact code snippet>
+"#,
+            obfuscation_snippets.join("\n")
+        )
+    };
+
     format!(
         r#"You are a browser extension security analyst. Analyze these JavaScript files for suspicious patterns.
 
@@ -210,7 +246,7 @@ Look for:
 IMPORTANT: When you see obfuscated code like String.fromCharCode(...), atob(...), or hex-encoded strings,
 you can ask to deobfuscate them by responding:
 DEOBFUSCATE: <the exact code snippet>
-
+{}
 For each finding, respond in this format:
 FINDING: [SEVERITY] - [TITLE]
 DESCRIPTION: [Brief description of what the code is doing and why it's concerning]
@@ -218,7 +254,7 @@ DESCRIPTION: [Brief description of what the code is doing and why it's concernin
 Severity levels: CRITICAL, HIGH, MEDIUM, LOW, INFO
 
 If no security concerns are found, respond with "NO_FINDINGS"."#,
-        scripts_text
+        scripts_text, obfuscation_section
     )
 }
 
@@ -335,8 +371,17 @@ fn build_deobfuscate_prompt(snippet: &str) -> String {
         result
             .api_calls
             .iter()
-            .map(|c| format!("- {}({})", c.function,
-                c.arguments.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ")))
+            .map(|c| {
+                format!(
+                    "- {}({})",
+                    c.function,
+                    c.arguments
+                        .iter()
+                        .map(|a| a.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n")
     };
@@ -471,13 +516,13 @@ fn parse_finding_line(content: &str) -> Option<(String, String)> {
     let content = content.trim();
 
     // Try [SEVERITY] format first
-    if content.starts_with('[') {
-        if let Some(end_bracket) = content.find(']') {
-            let severity = content[1..end_bracket].to_string();
-            let rest = content[end_bracket + 1..].trim();
-            let title = rest.strip_prefix('-').unwrap_or(rest).trim().to_string();
-            return Some((severity, title));
-        }
+    if content.starts_with('[')
+        && let Some(end_bracket) = content.find(']')
+    {
+        let severity = content[1..end_bracket].to_string();
+        let rest = content[end_bracket + 1..].trim();
+        let title = rest.strip_prefix('-').unwrap_or(rest).trim().to_string();
+        return Some((severity, title));
     }
 
     // Try SEVERITY - Title format
