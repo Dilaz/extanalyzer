@@ -1,24 +1,25 @@
 use crate::models::{Category, Endpoint, EndpointContext, Finding, HttpMethod, Location, Severity};
 use once_cell::sync::Lazy;
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{
-    Argument, CallExpression, Expression, Program, Statement,
-    StringLiteral,
-};
+use oxc_ast::ast::{Argument, CallExpression, Expression, Program, Statement, StringLiteral};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 use regex::Regex;
 use std::path::Path;
 
 // Lazy-compiled regex patterns for additional detection
-static HEX_ENCODED_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\\x[0-9a-fA-F]{2}").unwrap());
-static URL_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"https?://[^\s"'`]+"#).unwrap());
+
+// Pattern that looks like a regex character class (common in libraries like jQuery's Sizzle)
+static REGEX_CHAR_CLASS_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^\[.*\\x[0-9a-fA-F]{2}.*\]$").unwrap());
+
+// Consecutive hex escapes indicate encoded text (suspicious) - e.g., \x68\x65\x6c\x6c\x6f
+static CONSECUTIVE_HEX_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\\x[0-9a-fA-F]{2}\\x[0-9a-fA-F]{2}").unwrap());
+static URL_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r#"https?://[^\s"'`]+"#).unwrap());
 static FROM_CHAR_CODE_PATTERN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"String\.fromCharCode\s*\(").unwrap());
-static DOC_COOKIE_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"document\.cookie").unwrap());
+static DOC_COOKIE_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"document\.cookie").unwrap());
 
 /// JavaScript analyzer that uses Oxc to parse and walk the AST
 struct JsAnalyzer<'a> {
@@ -56,6 +57,19 @@ impl<'a> JsAnalyzer<'a> {
         }
     }
 
+    /// Extract source code snippet from a span (limited to avoid huge snippets)
+    fn snippet_from_span(&self, span: oxc_span::Span) -> String {
+        let start = span.start as usize;
+        let end = (span.end as usize).min(self.source_text.len());
+        let snippet = &self.source_text[start..end];
+        // Limit snippet size to avoid overwhelming the LLM
+        if snippet.len() > 500 {
+            format!("{}...", &snippet[..500])
+        } else {
+            snippet.to_string()
+        }
+    }
+
     /// Extract the function name from a call expression
     fn get_callee_name(&self, callee: &Expression<'_>) -> Option<String> {
         match callee {
@@ -73,9 +87,7 @@ impl<'a> JsAnalyzer<'a> {
                 chain.push(member.property.name.to_string());
                 Some(chain)
             }
-            Expression::ComputedMemberExpression(member) => {
-                self.get_member_chain(&member.object)
-            }
+            Expression::ComputedMemberExpression(member) => self.get_member_chain(&member.object),
             _ => None,
         }
     }
@@ -117,7 +129,9 @@ impl<'a> JsAnalyzer<'a> {
                 self.visit_statement(&while_stmt.body);
             }
             Statement::ForStatement(for_stmt) => {
-                if let Some(oxc_ast::ast::ForStatementInit::VariableDeclaration(var_decl)) = &for_stmt.init {
+                if let Some(oxc_ast::ast::ForStatementInit::VariableDeclaration(var_decl)) =
+                    &for_stmt.init
+                {
                     for decl in &var_decl.declarations {
                         if let Some(ref init_expr) = decl.init {
                             self.visit_expression(init_expr);
@@ -162,11 +176,11 @@ impl<'a> JsAnalyzer<'a> {
             Statement::ClassDeclaration(class_decl) => {
                 // Visit class body methods and properties
                 for element in &class_decl.body.body {
-                    if let oxc_ast::ast::ClassElement::MethodDefinition(method) = element {
-                        if let Some(ref body) = method.value.body {
-                            for stmt in &body.statements {
-                                self.visit_statement(stmt);
-                            }
+                    if let oxc_ast::ast::ClassElement::MethodDefinition(method) = element
+                        && let Some(ref body) = method.value.body
+                    {
+                        for stmt in &body.statements {
+                            self.visit_statement(stmt);
                         }
                     }
                 }
@@ -203,11 +217,11 @@ impl<'a> JsAnalyzer<'a> {
                     }
                     oxc_ast::ast::ExportDefaultDeclarationKind::ClassDeclaration(class_decl) => {
                         for element in &class_decl.body.body {
-                            if let oxc_ast::ast::ClassElement::MethodDefinition(method) = element {
-                                if let Some(ref body) = method.value.body {
-                                    for stmt in &body.statements {
-                                        self.visit_statement(stmt);
-                                    }
+                            if let oxc_ast::ast::ClassElement::MethodDefinition(method) = element
+                                && let Some(ref body) = method.value.body
+                            {
+                                for stmt in &body.statements {
+                                    self.visit_statement(stmt);
                                 }
                             }
                         }
@@ -239,11 +253,12 @@ impl<'a> JsAnalyzer<'a> {
                         }
                         oxc_ast::ast::Declaration::ClassDeclaration(class_decl) => {
                             for element in &class_decl.body.body {
-                                if let oxc_ast::ast::ClassElement::MethodDefinition(method) = element {
-                                    if let Some(ref body) = method.value.body {
-                                        for stmt in &body.statements {
-                                            self.visit_statement(stmt);
-                                        }
+                                if let oxc_ast::ast::ClassElement::MethodDefinition(method) =
+                                    element
+                                    && let Some(ref body) = method.value.body
+                                {
+                                    for stmt in &body.statements {
+                                        self.visit_statement(stmt);
                                     }
                                 }
                             }
@@ -321,8 +336,9 @@ impl<'a> JsAnalyzer<'a> {
                     let value = quasi.value.raw.as_str();
                     if let Some(url_match) = URL_PATTERN.find(value) {
                         let url = url_match.as_str().to_string();
-                        let endpoint = Endpoint::new(url.clone(), self.location_from_span(quasi.span))
-                            .with_context(classify_url(&url));
+                        let endpoint =
+                            Endpoint::new(url.clone(), self.location_from_span(quasi.span))
+                                .with_context(classify_url(&url));
                         self.endpoints.push(endpoint);
                     }
                 }
@@ -351,20 +367,20 @@ impl<'a> JsAnalyzer<'a> {
             }
             Expression::NewExpression(new_expr) => {
                 // Check for new Function("code")
-                if let Expression::Identifier(ident) = &new_expr.callee {
-                    if ident.name == "Function" {
-                        self.findings.push(
-                            Finding::new(
-                                Severity::Critical,
-                                Category::ApiUsage,
-                                "Dangerous: new Function() constructor",
-                            )
-                            .with_description(
-                                "new Function() creates functions from strings, similar to eval().",
-                            )
-                            .with_location(self.location_from_span(new_expr.span)),
-                        );
-                    }
+                if let Expression::Identifier(ident) = &new_expr.callee
+                    && ident.name == "Function"
+                {
+                    self.findings.push(
+                        Finding::new(
+                            Severity::Critical,
+                            Category::ApiUsage,
+                            "Dangerous: new Function() constructor",
+                        )
+                        .with_description(
+                            "new Function() creates functions from strings, similar to eval().",
+                        )
+                        .with_location(self.location_from_span(new_expr.span)),
+                    );
                 }
                 // Continue traversing
                 self.visit_expression(&new_expr.callee);
@@ -462,10 +478,8 @@ impl<'a> JsAnalyzer<'a> {
         if let Some(first_arg) = call_expr.arguments.first() {
             if let Argument::StringLiteral(lit) = first_arg {
                 let url = lit.value.to_string();
-                let mut endpoint = Endpoint::new(
-                    url.clone(),
-                    self.location_from_span(call_expr.span),
-                );
+                let mut endpoint =
+                    Endpoint::new(url.clone(), self.location_from_span(call_expr.span));
 
                 // Check for method in second argument (options object)
                 if call_expr.arguments.len() > 1 {
@@ -513,18 +527,30 @@ impl<'a> JsAnalyzer<'a> {
                 );
             }
             // Check for String.fromCharCode obfuscation
+            // Skip UTF-16 surrogate pair handling (common in libraries)
             if root == "String" && chain.len() >= 2 && chain[1] == "fromCharCode" {
-                self.findings.push(
-                    Finding::new(
-                        Severity::Medium,
-                        Category::Obfuscation,
-                        "String.fromCharCode() obfuscation detected",
-                    )
-                    .with_description(
-                        "String.fromCharCode() is commonly used to obfuscate malicious code",
-                    )
-                    .with_location(self.location_from_span(call_expr.span)),
-                );
+                let snippet = self.snippet_from_span(call_expr.span);
+                // Skip if it looks like UTF-16 surrogate pair handling
+                let is_surrogate_handling = snippet.contains("55296")  // High surrogate start
+                    || snippet.contains("56320")  // Low surrogate start
+                    || snippet.contains("65536")  // Supplementary plane offset
+                    || snippet.contains("0xD800") // High surrogate hex
+                    || snippet.contains("0xDC00"); // Low surrogate hex
+
+                if !is_surrogate_handling {
+                    self.findings.push(
+                        Finding::new(
+                            Severity::Medium,
+                            Category::Obfuscation,
+                            "String.fromCharCode() obfuscation detected",
+                        )
+                        .with_description(
+                            "String.fromCharCode() is commonly used to obfuscate malicious code",
+                        )
+                        .with_location(self.location_from_span(call_expr.span))
+                        .with_snippet(snippet),
+                    );
+                }
             }
             return;
         }
@@ -581,14 +607,8 @@ impl<'a> JsAnalyzer<'a> {
                     Severity::High,
                     "Privacy API can modify browser security settings",
                 ),
-                "proxy" => (
-                    Severity::High,
-                    "Proxy API can redirect all network traffic",
-                ),
-                _ => (
-                    Severity::Info,
-                    "Browser extension API usage",
-                ),
+                "proxy" => (Severity::High, "Proxy API can redirect all network traffic"),
+                _ => (Severity::Info, "Browser extension API usage"),
             };
 
             let full_api = chain.join(".");
@@ -618,7 +638,9 @@ impl<'a> JsAnalyzer<'a> {
         }
 
         // Check for hex-encoded strings (obfuscation)
-        if HEX_ENCODED_PATTERN.is_match(value) {
+        // Only flag if consecutive hex escapes (indicates text encoding, not regex patterns)
+        // Skip isolated hex escapes like \x20 or \xa0 (common in regex for whitespace)
+        if CONSECUTIVE_HEX_PATTERN.is_match(value) && !REGEX_CHAR_CLASS_PATTERN.is_match(value) {
             self.findings.push(
                 Finding::new(
                     Severity::Medium,
@@ -626,7 +648,8 @@ impl<'a> JsAnalyzer<'a> {
                     "Hex-encoded string detected",
                 )
                 .with_description("Hex-encoded strings are often used to hide malicious payloads")
-                .with_location(self.location_from_span(lit.span)),
+                .with_location(self.location_from_span(lit.span))
+                .with_snippet(self.snippet_from_span(lit.span)),
             );
         }
     }
@@ -642,11 +665,28 @@ impl<'a> JsAnalyzer<'a> {
                 .count()
                 + 1;
 
-            // Only add if not already found by AST visitor
-            if !self.findings.iter().any(|f| {
-                f.title.contains("String.fromCharCode")
-                    && f.location.as_ref().map(|l| l.line) == Some(Some(line))
-            }) {
+            // Extract a snippet around the match (up to closing paren or 200 chars)
+            let snippet_start = cap.start();
+            let snippet_end = self.source_text[snippet_start..]
+                .find(')')
+                .map(|i| (snippet_start + i + 1).min(snippet_start + 200))
+                .unwrap_or((snippet_start + 200).min(self.source_text.len()));
+            let snippet = &self.source_text[snippet_start..snippet_end];
+
+            // Skip UTF-16 surrogate pair handling (common in libraries)
+            let is_surrogate_handling = snippet.contains("55296")
+                || snippet.contains("56320")
+                || snippet.contains("65536")
+                || snippet.contains("0xD800")
+                || snippet.contains("0xDC00");
+
+            // Only add if not already found by AST visitor and not surrogate handling
+            if !is_surrogate_handling
+                && !self.findings.iter().any(|f| {
+                    f.title.contains("String.fromCharCode")
+                        && f.location.as_ref().map(|l| l.line) == Some(Some(line))
+                })
+            {
                 self.findings.push(
                     Finding::new(
                         Severity::Medium,
@@ -660,7 +700,8 @@ impl<'a> JsAnalyzer<'a> {
                         file: self.file_path.to_path_buf(),
                         line: Some(line),
                         column: None,
-                    }),
+                    })
+                    .with_snippet(snippet),
                 );
             }
         }
