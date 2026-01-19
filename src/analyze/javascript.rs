@@ -15,6 +15,10 @@ static HEX_ENCODED_PATTERN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\\x[0-9a-fA-F]{2}").unwrap());
 static URL_PATTERN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"https?://[^\s"'`]+"#).unwrap());
+static FROM_CHAR_CODE_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"String\.fromCharCode\s*\(").unwrap());
+static DOC_COOKIE_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"document\.cookie").unwrap());
 
 /// JavaScript analyzer that uses Oxc to parse and walk the AST
 struct JsAnalyzer<'a> {
@@ -113,16 +117,11 @@ impl<'a> JsAnalyzer<'a> {
                 self.visit_statement(&while_stmt.body);
             }
             Statement::ForStatement(for_stmt) => {
-                if let Some(ref init) = for_stmt.init {
-                    match init {
-                        oxc_ast::ast::ForStatementInit::VariableDeclaration(var_decl) => {
-                            for decl in &var_decl.declarations {
-                                if let Some(ref init_expr) = decl.init {
-                                    self.visit_expression(init_expr);
-                                }
-                            }
+                if let Some(oxc_ast::ast::ForStatementInit::VariableDeclaration(var_decl)) = &for_stmt.init {
+                    for decl in &var_decl.declarations {
+                        if let Some(ref init_expr) = decl.init {
+                            self.visit_expression(init_expr);
                         }
-                        _ => {}
                     }
                 }
                 if let Some(ref test) = for_stmt.test {
@@ -157,6 +156,99 @@ impl<'a> JsAnalyzer<'a> {
                 if let Some(ref finalizer) = try_stmt.finalizer {
                     for stmt in &finalizer.body {
                         self.visit_statement(stmt);
+                    }
+                }
+            }
+            Statement::ClassDeclaration(class_decl) => {
+                // Visit class body methods and properties
+                for element in &class_decl.body.body {
+                    if let oxc_ast::ast::ClassElement::MethodDefinition(method) = element {
+                        if let Some(ref body) = method.value.body {
+                            for stmt in &body.statements {
+                                self.visit_statement(stmt);
+                            }
+                        }
+                    }
+                }
+            }
+            Statement::SwitchStatement(switch_stmt) => {
+                self.visit_expression(&switch_stmt.discriminant);
+                for case in &switch_stmt.cases {
+                    if let Some(ref test) = case.test {
+                        self.visit_expression(test);
+                    }
+                    for stmt in &case.consequent {
+                        self.visit_statement(stmt);
+                    }
+                }
+            }
+            Statement::DoWhileStatement(do_while) => {
+                self.visit_statement(&do_while.body);
+                self.visit_expression(&do_while.test);
+            }
+            Statement::ForInStatement(for_in) => {
+                self.visit_statement(&for_in.body);
+            }
+            Statement::ForOfStatement(for_of) => {
+                self.visit_statement(&for_of.body);
+            }
+            Statement::ExportDefaultDeclaration(export_default) => {
+                match &export_default.declaration {
+                    oxc_ast::ast::ExportDefaultDeclarationKind::FunctionDeclaration(func) => {
+                        if let Some(ref body) = func.body {
+                            for stmt in &body.statements {
+                                self.visit_statement(stmt);
+                            }
+                        }
+                    }
+                    oxc_ast::ast::ExportDefaultDeclarationKind::ClassDeclaration(class_decl) => {
+                        for element in &class_decl.body.body {
+                            if let oxc_ast::ast::ClassElement::MethodDefinition(method) = element {
+                                if let Some(ref body) = method.value.body {
+                                    for stmt in &body.statements {
+                                        self.visit_statement(stmt);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        // Handle expression exports (e.g., export default () => {})
+                        if let Some(expr) = export_default.declaration.as_expression() {
+                            self.visit_expression(expr);
+                        }
+                    }
+                }
+            }
+            Statement::ExportNamedDeclaration(export_named) => {
+                if let Some(ref decl) = export_named.declaration {
+                    match decl {
+                        oxc_ast::ast::Declaration::VariableDeclaration(var_decl) => {
+                            for decl in &var_decl.declarations {
+                                if let Some(ref init) = decl.init {
+                                    self.visit_expression(init);
+                                }
+                            }
+                        }
+                        oxc_ast::ast::Declaration::FunctionDeclaration(func) => {
+                            if let Some(ref body) = func.body {
+                                for stmt in &body.statements {
+                                    self.visit_statement(stmt);
+                                }
+                            }
+                        }
+                        oxc_ast::ast::Declaration::ClassDeclaration(class_decl) => {
+                            for element in &class_decl.body.body {
+                                if let oxc_ast::ast::ClassElement::MethodDefinition(method) = element {
+                                    if let Some(ref body) = method.value.body {
+                                        for stmt in &body.statements {
+                                            self.visit_statement(stmt);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -258,6 +350,23 @@ impl<'a> JsAnalyzer<'a> {
                 self.visit_expression(&paren.expression);
             }
             Expression::NewExpression(new_expr) => {
+                // Check for new Function("code")
+                if let Expression::Identifier(ident) = &new_expr.callee {
+                    if ident.name == "Function" {
+                        self.findings.push(
+                            Finding::new(
+                                Severity::Critical,
+                                Category::ApiUsage,
+                                "Dangerous: new Function() constructor",
+                            )
+                            .with_description(
+                                "new Function() creates functions from strings, similar to eval().",
+                            )
+                            .with_location(self.location_from_span(new_expr.span)),
+                        );
+                    }
+                }
+                // Continue traversing
                 self.visit_expression(&new_expr.callee);
                 for arg in &new_expr.arguments {
                     if let Some(expr) = arg.as_expression() {
@@ -525,8 +634,7 @@ impl<'a> JsAnalyzer<'a> {
     /// Run additional regex-based pattern detection
     fn run_regex_patterns(&mut self) {
         // Check for String.fromCharCode patterns not caught by AST
-        let from_char_code_pattern = Regex::new(r"String\.fromCharCode\s*\(").unwrap();
-        for cap in from_char_code_pattern.find_iter(self.source_text) {
+        for cap in FROM_CHAR_CODE_PATTERN.find_iter(self.source_text) {
             // Calculate line number
             let line = self.source_text[..cap.start()]
                 .chars()
@@ -558,8 +666,7 @@ impl<'a> JsAnalyzer<'a> {
         }
 
         // Check for document.cookie access patterns
-        let doc_cookie_pattern = Regex::new(r"document\.cookie").unwrap();
-        for cap in doc_cookie_pattern.find_iter(self.source_text) {
+        for cap in DOC_COOKIE_PATTERN.find_iter(self.source_text) {
             let line = self.source_text[..cap.start()]
                 .chars()
                 .filter(|&c| c == '\n')
