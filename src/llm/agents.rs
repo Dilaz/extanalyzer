@@ -207,6 +207,10 @@ Look for:
 6. Cryptocurrency mining code
 7. Remote code loading
 
+IMPORTANT: When you see obfuscated code like String.fromCharCode(...), atob(...), or hex-encoded strings,
+you can ask to deobfuscate them by responding:
+DEOBFUSCATE: <the exact code snippet>
+
 For each finding, respond in this format:
 FINDING: [SEVERITY] - [TITLE]
 DESCRIPTION: [Brief description of what the code is doing and why it's concerning]
@@ -376,7 +380,48 @@ fn parse_findings(response: &str, task: &AnalysisTask) -> Vec<Finding> {
         return findings;
     }
 
-    // Parse FINDING: [SEVERITY] - [TITLE] format
+    // Check for deobfuscation requests
+    for line in response.lines() {
+        let line = line.trim();
+        if line.starts_with("DEOBFUSCATE:") {
+            let snippet = line.strip_prefix("DEOBFUSCATE:").unwrap_or("").trim();
+            if !snippet.is_empty() {
+                // Run sandbox and add result as a finding
+                use crate::sandbox::execute_snippet;
+                let result = execute_snippet(snippet, 2000);
+
+                let description = if !result.decoded_strings.is_empty() {
+                    let decoded: Vec<String> = result
+                        .decoded_strings
+                        .iter()
+                        .map(|d| format!("'{}' → '{}'", d.input, d.output))
+                        .collect();
+                    format!("Deobfuscated: {}", decoded.join(", "))
+                } else if !result.api_calls.is_empty() {
+                    let calls: Vec<String> = result
+                        .api_calls
+                        .iter()
+                        .map(|c| c.function.clone())
+                        .collect();
+                    format!("API calls traced: {}", calls.join(", "))
+                } else {
+                    "No decodable content found".to_string()
+                };
+
+                findings.push(
+                    Finding::new(
+                        Severity::Info,
+                        Category::Obfuscation,
+                        "Deobfuscation result",
+                    )
+                    .with_description(description)
+                    .with_snippet(snippet.to_string()),
+                );
+            }
+        }
+    }
+
+    // Continue with existing FINDING: parsing below...
     let lines: Vec<&str> = response.lines().collect();
     let mut i = 0;
 
