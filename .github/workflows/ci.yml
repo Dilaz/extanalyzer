@@ -16,9 +16,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
-
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -39,10 +36,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
-        with:
-          components: rustfmt
+      - name: Add rustfmt component
+        run: rustup component add rustfmt
 
       - name: Run cargo fmt
         run: cargo fmt --all -- --check
@@ -53,10 +48,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
-        with:
-          components: clippy
+      - name: Add clippy component
+        run: rustup component add clippy
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -78,9 +71,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
-
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -100,9 +90,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
 
       - name: Cache cargo registry
         uses: actions/cache@v4
