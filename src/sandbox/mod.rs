@@ -17,8 +17,8 @@ pub use trace::{ApiCall, DecodedString, SandboxResult};
 /// ```
 /// use extanalyzer::sandbox::execute_snippet;
 ///
-/// let result = execute_snippet("atob('aGVsbG8=')", 1000);
-/// assert_eq!(result.decoded_strings[0].output, "hello");
+/// let result = execute_snippet("1 + 2", 1000);
+/// assert_eq!(result.final_value, Some("3".to_string()));
 /// ```
 pub fn execute_snippet(code: &str, timeout_ms: u64) -> SandboxResult {
     runtime::run_in_sandbox(code, timeout_ms)
