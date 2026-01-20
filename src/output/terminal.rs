@@ -172,7 +172,11 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
                 }
             }
 
-            all_flags.extend(&ep.flags);
+            for flag in &ep.flags {
+                if !all_flags.contains(&flag) {
+                    all_flags.push(flag);
+                }
+            }
 
             if context_severity(&ep.context) > context_severity(&context) {
                 context = ep.context.clone();
@@ -184,9 +188,9 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
             let loc_str = if locations.len() == 1 {
                 format!("({})", locations[0])
             } else {
-                format!("(x{} calls)", locations.len())
+                format!("(×{} calls)", locations.len())
             };
-            println!("    {} {:<6} {}", "->".bright_black(), method.cyan(), loc_str.bright_black());
+            println!("    {} {:<6} {}", "→".bright_black(), method.cyan(), loc_str.bright_black());
         }
 
         // Print data sources if any
@@ -199,10 +203,10 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
         for flag in all_flags {
             let flag_str = match flag {
                 EndpointFlag::CrossDomainTransfer { source_domain } => {
-                    format!("! Cross-domain transfer from {}", source_domain).red().to_string()
+                    format!("⚠ Cross-domain transfer from {}", source_domain).red().to_string()
                 }
-                EndpointFlag::SensitiveData => "! Receives sensitive data".red().to_string(),
-                EndpointFlag::KnownTracker => "* Known tracker".yellow().to_string(),
+                EndpointFlag::SensitiveData => "⚠ Receives sensitive data".red().to_string(),
+                EndpointFlag::KnownTracker => "● Known tracker".yellow().to_string(),
             };
             println!("        {}", flag_str);
         }
