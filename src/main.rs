@@ -178,6 +178,7 @@ async fn analyze_single(args: &Args, input: &str) -> Result<()> {
                         AnalysisTask::ManifestReview,
                         AnalysisTask::ScriptAnalysis,
                         AnalysisTask::EndpointAnalysis,
+                        AnalysisTask::DarkPatternReview,
                         AnalysisTask::FinalSummary,
                     ];
 
