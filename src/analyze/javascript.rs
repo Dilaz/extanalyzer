@@ -246,6 +246,36 @@ impl<'a> JsAnalyzer<'a> {
         None
     }
 
+    /// Check if this is a fetch() call and return the URL
+    fn check_fetch_call_url(&self, call_expr: &CallExpression<'_>) -> Option<String> {
+        if let Some(name) = self.get_callee_name(&call_expr.callee)
+            && name == "fetch"
+            && let Some(first_arg) = call_expr.arguments.first()
+        {
+            if let Argument::StringLiteral(lit) = first_arg {
+                return Some(lit.value.to_string());
+            }
+            if let Argument::TemplateLiteral(tmpl) = first_arg {
+                return tmpl.quasis.first().map(|q| q.value.raw.to_string());
+            }
+        }
+        None
+    }
+
+    /// Check if this is a response.json() or response.text() call and return the variable name
+    fn check_response_method_call(&self, call_expr: &CallExpression<'_>) -> Option<String> {
+        if let Some(chain) = self.get_member_chain(&call_expr.callee)
+            && chain.len() == 2
+        {
+            let obj_name = &chain[0];
+            let method = &chain[1];
+            if method == "json" || method == "text" {
+                return Some(obj_name.clone());
+            }
+        }
+        None
+    }
+
     /// Extract data sources from an expression (variable reference, object, etc.)
     fn extract_data_sources(&self, expr: &Expression<'_>) -> Vec<DataSource> {
         match expr {
@@ -317,6 +347,33 @@ impl<'a> JsAnalyzer<'a> {
                                     &decl.id
                             {
                                 self.source_tracker.bind(&ident.name, vec![source]);
+                            }
+
+                            // Check for fetch() call - track the response variable
+                            if let Some(url) = self.check_fetch_call_url(call_expr)
+                                && let oxc_ast::ast::BindingPattern::BindingIdentifier(ident) =
+                                    &decl.id
+                            {
+                                let domain = extract_domain(&url);
+                                self.source_tracker
+                                    .bind(&ident.name, vec![DataSource::NetworkResponse(domain)]);
+                            }
+
+                            // Check for response.json() or response.text() - propagate source
+                            if let Some(response_var) = self.check_response_method_call(call_expr)
+                                && let oxc_ast::ast::BindingPattern::BindingIdentifier(ident) =
+                                    &decl.id
+                            {
+                                // Look up the response variable's sources and propagate them
+                                let sources = self.source_tracker.lookup(&response_var);
+                                // Filter to only NetworkResponse sources
+                                let network_sources: Vec<_> = sources
+                                    .into_iter()
+                                    .filter(|s| matches!(s, DataSource::NetworkResponse(_)))
+                                    .collect();
+                                if !network_sources.is_empty() {
+                                    self.source_tracker.bind(&ident.name, network_sources);
+                                }
                             }
                         }
                         // Check for member expression sources like document.cookie or location.href
@@ -995,6 +1052,16 @@ impl<'a> JsAnalyzer<'a> {
             }
         }
     }
+}
+
+/// Extract domain from a URL
+fn extract_domain(url: &str) -> String {
+    url.trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .unwrap_or(url)
+        .to_string()
 }
 
 /// Classify a URL based on its domain and path

