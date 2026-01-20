@@ -1,5 +1,5 @@
 use crate::analyze::AnalysisResult;
-use crate::models::{Endpoint, EndpointContext, Extension, Finding, Severity};
+use crate::models::{DataSource, Endpoint, EndpointContext, EndpointFlag, Extension, Finding, Severity};
 use colored::*;
 use std::collections::HashMap;
 
@@ -134,57 +134,80 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
         "── Network Endpoints ────────────────────────────────────────".bright_black()
     );
 
-    // Group endpoints by (method, url) and aggregate
-    let mut grouped: HashMap<(String, String), (usize, EndpointContext, Vec<String>)> =
-        HashMap::new();
-
+    // Group by URL
+    let mut grouped: HashMap<String, Vec<&Endpoint>> = HashMap::new();
     for endpoint in endpoints {
-        let method = endpoint
-            .method
-            .as_ref()
-            .map(|m| m.as_str())
-            .unwrap_or("GET")
-            .to_string();
-        let key = (method, endpoint.url.clone());
-
-        let entry = grouped
-            .entry(key)
-            .or_insert((0, EndpointContext::Unknown, Vec::new()));
-        entry.0 += 1;
-        // Keep the most severe context
-        if context_severity(&endpoint.context) > context_severity(&entry.1) {
-            entry.1 = endpoint.context.clone();
-        }
-        // Merge data sources (convert to string representation)
-        for source in &endpoint.data_sources {
-            let source_str = source.to_string();
-            if !entry.2.contains(&source_str) {
-                entry.2.push(source_str);
-            }
-        }
+        grouped.entry(endpoint.url.clone()).or_default().push(endpoint);
     }
 
-    // Sort by context severity (most severe first), then by URL
+    // Sort by context severity (most suspicious first)
     let mut sorted: Vec<_> = grouped.into_iter().collect();
     sorted.sort_by(|a, b| {
-        context_severity(&b.1.1)
-            .cmp(&context_severity(&a.1.1))
-            .then_with(|| a.0.1.cmp(&b.0.1))
+        let max_a = a.1.iter().map(|e| context_severity(&e.context)).max().unwrap_or(0);
+        let max_b = b.1.iter().map(|e| context_severity(&e.context)).max().unwrap_or(0);
+        max_b.cmp(&max_a).then_with(|| a.0.cmp(&b.0))
     });
 
-    for ((method, url), (count, context, data_sources)) in sorted {
-        let arrow = "→".bright_black();
-        let count_str = if count > 1 {
-            format!(" (×{})", count).bright_black().to_string()
-        } else {
-            String::new()
-        };
-        println!("  {} {} {}{}", arrow, method.cyan(), url, count_str);
+    for (url, endpoint_group) in sorted {
+        println!();
+        println!("  {}", url.white());
 
-        if !data_sources.is_empty() {
-            println!("    Data: {{ {} }}", data_sources.join(", ").yellow());
+        // Collect unique methods with their locations
+        let mut methods: HashMap<String, Vec<String>> = HashMap::new();
+        let mut all_sources: Vec<DataSource> = Vec::new();
+        let mut all_flags: Vec<&EndpointFlag> = Vec::new();
+        let mut context = EndpointContext::Unknown;
+
+        for ep in &endpoint_group {
+            let method = ep.method.as_ref().map(|m| m.as_str()).unwrap_or("GET").to_string();
+            let loc = format!("{}:{}",
+                ep.location.file.file_name().and_then(|n| n.to_str()).unwrap_or("unknown"),
+                ep.location.line.unwrap_or(0)
+            );
+            methods.entry(method).or_default().push(loc);
+
+            for source in &ep.data_sources {
+                if !all_sources.contains(source) {
+                    all_sources.push(source.clone());
+                }
+            }
+
+            all_flags.extend(&ep.flags);
+
+            if context_severity(&ep.context) > context_severity(&context) {
+                context = ep.context.clone();
+            }
         }
 
+        // Print methods
+        for (method, locations) in &methods {
+            let loc_str = if locations.len() == 1 {
+                format!("({})", locations[0])
+            } else {
+                format!("(x{} calls)", locations.len())
+            };
+            println!("    {} {:<6} {}", "->".bright_black(), method.cyan(), loc_str.bright_black());
+        }
+
+        // Print data sources if any
+        if !all_sources.is_empty() {
+            let sources_str = all_sources.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(", ");
+            println!("        Sends: {}", sources_str.yellow());
+        }
+
+        // Print flags if any
+        for flag in all_flags {
+            let flag_str = match flag {
+                EndpointFlag::CrossDomainTransfer { source_domain } => {
+                    format!("! Cross-domain transfer from {}", source_domain).red().to_string()
+                }
+                EndpointFlag::SensitiveData => "! Receives sensitive data".red().to_string(),
+                EndpointFlag::KnownTracker => "* Known tracker".yellow().to_string(),
+            };
+            println!("        {}", flag_str);
+        }
+
+        // Print context
         let context_colored = match context {
             EndpointContext::Suspicious => "SUSPICIOUS".red(),
             EndpointContext::KnownMalicious => "MALICIOUS".red().bold(),
@@ -193,18 +216,18 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
             EndpointContext::Api => "API".green(),
             EndpointContext::Unknown => "UNKNOWN".bright_black(),
         };
-
         println!("    Context: {}", context_colored);
-        println!();
     }
+
+    println!();
 }
 
-/// Get severity score for endpoint context (higher = more severe)
+/// Get numeric severity for endpoint context (higher = more severe)
 fn context_severity(context: &EndpointContext) -> u8 {
     match context {
         EndpointContext::KnownMalicious => 5,
         EndpointContext::Suspicious => 4,
-        EndpointContext::Analytics => 2,
+        EndpointContext::Analytics => 3,
         EndpointContext::Telemetry => 2,
         EndpointContext::Api => 1,
         EndpointContext::Unknown => 0,
