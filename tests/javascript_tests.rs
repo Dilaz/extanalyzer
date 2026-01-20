@@ -88,3 +88,20 @@ fn test_dark_pattern_type_category() {
     let cat = Category::DarkPattern(dp);
     assert_eq!(cat.as_str(), "Dark Pattern");
 }
+
+#[test]
+fn test_source_tracker_local_storage() {
+    let code = r#"
+        let userId = localStorage.getItem('user_id');
+        fetch('https://api.example.com/track', { body: userId });
+    "#;
+
+    let (findings, endpoints) = extanalyzer::analyze::javascript::analyze_javascript(
+        code,
+        std::path::Path::new("test.js"),
+    );
+
+    assert!(!endpoints.is_empty());
+    let endpoint = endpoints.iter().find(|e| e.url.contains("api.example.com")).unwrap();
+    assert!(endpoint.data_sources.iter().any(|s| matches!(s, extanalyzer::models::DataSource::LocalStorage(k) if k == "user_id")));
+}

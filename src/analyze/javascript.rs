@@ -1,10 +1,13 @@
-use crate::models::{Category, Endpoint, EndpointContext, Finding, HttpMethod, Location, Severity};
+use crate::models::{
+    Category, DataSource, Endpoint, EndpointContext, Finding, HttpMethod, Location, Severity,
+};
 use once_cell::sync::Lazy;
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{Argument, CallExpression, Expression, Program, Statement, StringLiteral};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 use regex::Regex;
+use std::collections::HashMap;
 use std::path::Path;
 
 // Lazy-compiled regex patterns for additional detection
@@ -21,12 +24,46 @@ static FROM_CHAR_CODE_PATTERN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"String\.fromCharCode\s*\(").unwrap());
 static DOC_COOKIE_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"document\.cookie").unwrap());
 
+/// Tracks the data sources of variables through the AST
+#[derive(Debug, Default)]
+struct SourceTracker {
+    /// Maps variable names to their data sources
+    bindings: HashMap<String, Vec<DataSource>>,
+}
+
+impl SourceTracker {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record a binding from a variable to data sources
+    fn bind(&mut self, name: &str, sources: Vec<DataSource>) {
+        self.bindings.insert(name.to_string(), sources);
+    }
+
+    /// Look up the sources for a variable, returning Unknown if not tracked
+    fn lookup(&self, name: &str) -> Vec<DataSource> {
+        self.bindings
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| vec![DataSource::Unknown(name.to_string())])
+    }
+
+    /// Propagate sources from one variable to another (for assignments like `let y = x`)
+    fn propagate(&mut self, from: &str, to: &str) {
+        if let Some(sources) = self.bindings.get(from).cloned() {
+            self.bindings.insert(to.to_string(), sources);
+        }
+    }
+}
+
 /// JavaScript analyzer that uses Oxc to parse and walk the AST
 struct JsAnalyzer<'a> {
     findings: Vec<Finding>,
     endpoints: Vec<Endpoint>,
     source_text: &'a str,
     file_path: &'a Path,
+    source_tracker: SourceTracker,
 }
 
 impl<'a> JsAnalyzer<'a> {
@@ -36,6 +73,7 @@ impl<'a> JsAnalyzer<'a> {
             endpoints: Vec::new(),
             source_text,
             file_path,
+            source_tracker: SourceTracker::new(),
         }
     }
 
