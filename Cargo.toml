@@ -51,6 +51,9 @@ walkdir = "2"
 tempfile = "3"
 termimad = "0.34.1"
 rquickjs = { version = "0.11.0", features = ["bindgen", "parallel"] }
+oxc_ast_visit = "0.110"
+oxc_semantic = "0.110"
+oxc_syntax = "0.110"
 
 [dev-dependencies]
 wiremock = "0.6"

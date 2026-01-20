@@ -1,3 +1,4 @@
+pub mod code_extractor;
 pub mod dark_patterns;
 pub mod javascript;
 pub mod manifest;
