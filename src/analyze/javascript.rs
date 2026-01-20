@@ -203,6 +203,19 @@ impl<'a> JsAnalyzer<'a> {
         None
     }
 
+    /// Check if this call is a chrome.history.search or browser.history.search
+    fn check_history_access(&self, call_expr: &CallExpression<'_>) -> Option<DataSource> {
+        if let Some(chain) = self.get_member_chain(&call_expr.callee)
+            && chain.len() >= 3
+        {
+            let is_chrome_or_browser = chain[0] == "chrome" || chain[0] == "browser";
+            if is_chrome_or_browser && chain[1] == "history" && chain[2] == "search" {
+                return Some(DataSource::BrowsingHistory);
+            }
+        }
+        None
+    }
+
     /// Extract data sources from an expression (variable reference, object, etc.)
     fn extract_data_sources(&self, expr: &Expression<'_>) -> Vec<DataSource> {
         match expr {
@@ -248,11 +261,33 @@ impl<'a> JsAnalyzer<'a> {
                 for decl in &var_decl.declarations {
                     if let Some(ref init) = decl.init {
                         // Check if init is a call expression that returns a data source
-                        if let Expression::CallExpression(call_expr) = init
-                            && let Some(source) = self.check_storage_access(call_expr)
-                            && let oxc_ast::ast::BindingPattern::BindingIdentifier(ident) = &decl.id
+                        if let Expression::CallExpression(call_expr) = init {
+                            // Try storage first, then history
+                            let source = self
+                                .check_storage_access(call_expr)
+                                .or_else(|| self.check_history_access(call_expr));
+
+                            if let Some(source) = source
+                                && let oxc_ast::ast::BindingPattern::BindingIdentifier(ident) =
+                                    &decl.id
+                            {
+                                self.source_tracker.bind(&ident.name, vec![source]);
+                            }
+                        }
+                        // Check for AwaitExpression wrapping a CallExpression
+                        if let Expression::AwaitExpression(await_expr) = init
+                            && let Expression::CallExpression(call_expr) = &await_expr.argument
                         {
-                            self.source_tracker.bind(&ident.name, vec![source]);
+                            let source = self
+                                .check_storage_access(call_expr)
+                                .or_else(|| self.check_history_access(call_expr));
+
+                            if let Some(source) = source
+                                && let oxc_ast::ast::BindingPattern::BindingIdentifier(ident) =
+                                    &decl.id
+                            {
+                                self.source_tracker.bind(&ident.name, vec![source]);
+                            }
                         }
                         // Check for member expression sources like document.cookie or location.href
                         if let Expression::StaticMemberExpression(_) = init {

