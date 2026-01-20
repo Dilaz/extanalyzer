@@ -126,6 +126,7 @@ pub struct Endpoint {
     pub context: EndpointContext,
     pub description: Option<String>,
     pub flags: Vec<EndpointFlag>,
+    pub sandbox_trace: Option<SandboxTrace>,
 }
 
 impl Endpoint {
@@ -138,6 +139,7 @@ impl Endpoint {
             context: EndpointContext::Unknown,
             description: None,
             flags: Vec::new(),
+            sandbox_trace: None,
         }
     }
 
@@ -164,5 +166,75 @@ impl Endpoint {
     /// Get the highest severity from all flags
     pub fn max_flag_severity(&self) -> Option<Severity> {
         self.flags.iter().map(|f| f.severity()).min() // min because Critical < High < Medium etc.
+    }
+
+    pub fn with_sandbox_trace(mut self, trace: SandboxTrace) -> Self {
+        self.sandbox_trace = Some(trace);
+        self
+    }
+}
+
+/// A traced fetch call from sandbox execution
+#[derive(Debug, Clone, PartialEq)]
+pub struct TracedFetch {
+    /// The URL that was called
+    pub url: String,
+    /// HTTP method if specified
+    pub method: Option<String>,
+    /// Body content (serialized)
+    pub body: Option<String>,
+}
+
+/// Results from running code in the sandbox
+#[derive(Debug, Clone, Default)]
+pub struct SandboxTrace {
+    /// Fetch calls that were traced
+    pub fetch_calls: Vec<TracedFetch>,
+    /// Strings that were decoded (atob, fromCharCode results)
+    pub decoded_strings: Vec<String>,
+    /// Whether execution was partial (error/timeout)
+    pub partial: bool,
+    /// Error message if any
+    pub error: Option<String>,
+}
+
+impl SandboxTrace {
+    pub fn is_empty(&self) -> bool {
+        self.fetch_calls.is_empty() && self.decoded_strings.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sandbox_trace_default_is_empty() {
+        let trace = SandboxTrace::default();
+        assert!(trace.is_empty());
+        assert!(!trace.partial);
+        assert!(trace.error.is_none());
+    }
+
+    #[test]
+    fn test_sandbox_trace_with_fetch_not_empty() {
+        let trace = SandboxTrace {
+            fetch_calls: vec![TracedFetch {
+                url: "https://example.com".to_string(),
+                method: Some("POST".to_string()),
+                body: Some(r#"{"key":"value"}"#.to_string()),
+            }],
+            ..Default::default()
+        };
+        assert!(!trace.is_empty());
+    }
+
+    #[test]
+    fn test_sandbox_trace_with_decoded_not_empty() {
+        let trace = SandboxTrace {
+            decoded_strings: vec!["https://evil.com".to_string()],
+            ..Default::default()
+        };
+        assert!(!trace.is_empty());
     }
 }
