@@ -121,10 +121,11 @@ impl EndpointContext {
 pub struct Endpoint {
     pub url: String,
     pub method: Option<HttpMethod>,
-    pub payload_fields: Vec<String>,
+    pub data_sources: Vec<DataSource>,
     pub location: Location,
     pub context: EndpointContext,
     pub description: Option<String>,
+    pub flags: Vec<EndpointFlag>,
 }
 
 impl Endpoint {
@@ -132,10 +133,11 @@ impl Endpoint {
         Self {
             url,
             method: None,
-            payload_fields: Vec::new(),
+            data_sources: Vec::new(),
             location,
             context: EndpointContext::Unknown,
             description: None,
+            flags: Vec::new(),
         }
     }
 
@@ -144,13 +146,23 @@ impl Endpoint {
         self
     }
 
-    pub fn with_payload(mut self, fields: Vec<String>) -> Self {
-        self.payload_fields = fields;
+    pub fn with_data_sources(mut self, sources: Vec<DataSource>) -> Self {
+        self.data_sources = sources;
         self
     }
 
     pub fn with_context(mut self, context: EndpointContext) -> Self {
         self.context = context;
         self
+    }
+
+    pub fn with_flag(mut self, flag: EndpointFlag) -> Self {
+        self.flags.push(flag);
+        self
+    }
+
+    /// Get the highest severity from all flags
+    pub fn max_flag_severity(&self) -> Option<Severity> {
+        self.flags.iter().map(|f| f.severity()).min() // min because Critical < High < Medium etc.
     }
 }

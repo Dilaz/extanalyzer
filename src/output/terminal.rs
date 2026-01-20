@@ -155,10 +155,11 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
         if context_severity(&endpoint.context) > context_severity(&entry.1) {
             entry.1 = endpoint.context.clone();
         }
-        // Merge payload fields
-        for field in &endpoint.payload_fields {
-            if !entry.2.contains(field) {
-                entry.2.push(field.clone());
+        // Merge data sources (convert to string representation)
+        for source in &endpoint.data_sources {
+            let source_str = source.to_string();
+            if !entry.2.contains(&source_str) {
+                entry.2.push(source_str);
             }
         }
     }
@@ -171,7 +172,7 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
             .then_with(|| a.0.1.cmp(&b.0.1))
     });
 
-    for ((method, url), (count, context, payload_fields)) in sorted {
+    for ((method, url), (count, context, data_sources)) in sorted {
         let arrow = "→".bright_black();
         let count_str = if count > 1 {
             format!(" (×{})", count).bright_black().to_string()
@@ -180,8 +181,8 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
         };
         println!("  {} {} {}{}", arrow, method.cyan(), url, count_str);
 
-        if !payload_fields.is_empty() {
-            println!("    Payload: {{ {} }}", payload_fields.join(", ").yellow());
+        if !data_sources.is_empty() {
+            println!("    Data: {{ {} }}", data_sources.join(", ").yellow());
         }
 
         let context_colored = match context {
