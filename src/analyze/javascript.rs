@@ -130,6 +130,38 @@ impl<'a> JsAnalyzer<'a> {
         }
     }
 
+    /// Check if this call is a storage access and track it
+    fn check_storage_access(&self, call_expr: &CallExpression<'_>) -> Option<DataSource> {
+        if let Some(chain) = self.get_member_chain(&call_expr.callee) {
+            if chain.len() >= 2 {
+                let obj = &chain[0];
+                let method = &chain[1];
+
+                if method == "getItem" {
+                    // Get the key from first argument
+                    let key = call_expr
+                        .arguments
+                        .first()
+                        .and_then(|arg| {
+                            if let Argument::StringLiteral(lit) = arg {
+                                Some(lit.value.to_string())
+                            } else {
+                                Some("*".to_string())
+                            }
+                        })
+                        .unwrap_or_else(|| "*".to_string());
+
+                    match obj.as_str() {
+                        "localStorage" => return Some(DataSource::LocalStorage(key)),
+                        "sessionStorage" => return Some(DataSource::SessionStorage(key)),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Visit a program (entry point)
     fn visit_program(&mut self, program: &Program<'_>) {
         for stmt in &program.body {
@@ -146,6 +178,17 @@ impl<'a> JsAnalyzer<'a> {
             Statement::VariableDeclaration(var_decl) => {
                 for decl in &var_decl.declarations {
                     if let Some(ref init) = decl.init {
+                        // Check if init is a call expression that returns a data source
+                        if let Expression::CallExpression(call_expr) = init {
+                            if let Some(source) = self.check_storage_access(call_expr) {
+                                // Get variable name
+                                if let oxc_ast::ast::BindingPattern::BindingIdentifier(ident) =
+                                    &decl.id
+                                {
+                                    self.source_tracker.bind(&ident.name, vec![source]);
+                                }
+                            }
+                        }
                         self.visit_expression(init);
                     }
                 }
