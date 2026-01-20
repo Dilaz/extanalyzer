@@ -3,6 +3,7 @@ pub mod dark_patterns;
 pub mod javascript;
 pub mod manifest;
 pub mod patterns;
+pub mod sandbox_analysis;
 
 use crate::models::{Endpoint, Extension, Finding};
 use anyhow::Result;
