@@ -1,4 +1,4 @@
-use super::Location;
+use super::{Location, Severity};
 
 /// Represents the origin of data used in network requests
 #[derive(Debug, Clone, PartialEq)]
@@ -36,6 +36,37 @@ impl std::fmt::Display for DataSource {
             DataSource::Location(prop) => write!(f, "location.{}", prop),
             DataSource::NetworkResponse(url) => write!(f, "NetworkResponse({})", url),
             DataSource::Unknown(name) => write!(f, "{}", name),
+        }
+    }
+}
+
+/// Flags indicating suspicious characteristics of an endpoint
+#[derive(Debug, Clone, PartialEq)]
+pub enum EndpointFlag {
+    /// Data from one domain is being sent to another
+    CrossDomainTransfer { source_domain: String },
+    /// Endpoint receives sensitive data (cookies, history, etc.)
+    SensitiveData,
+    /// Known tracking/analytics domain
+    KnownTracker,
+}
+
+impl EndpointFlag {
+    pub fn severity(&self) -> Severity {
+        match self {
+            EndpointFlag::CrossDomainTransfer { .. } => Severity::High,
+            EndpointFlag::SensitiveData => Severity::High,
+            EndpointFlag::KnownTracker => Severity::Medium,
+        }
+    }
+
+    pub fn description(&self) -> String {
+        match self {
+            EndpointFlag::CrossDomainTransfer { source_domain } => {
+                format!("Data from {} sent to different domain", source_domain)
+            }
+            EndpointFlag::SensitiveData => "Receives sensitive user data".to_string(),
+            EndpointFlag::KnownTracker => "Known tracking/analytics endpoint".to_string(),
         }
     }
 }

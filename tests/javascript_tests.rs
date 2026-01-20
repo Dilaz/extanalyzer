@@ -70,3 +70,12 @@ fn test_data_source_display() {
     assert_eq!(DataSource::LocalStorage("userId".into()).to_string(), "localStorage(userId)");
     assert_eq!(DataSource::NetworkResponse("api.example.com".into()).to_string(), "NetworkResponse(api.example.com)");
 }
+
+#[test]
+fn test_endpoint_flag_severity() {
+    use extanalyzer::models::{EndpointFlag, Severity};
+
+    assert_eq!(EndpointFlag::CrossDomainTransfer { source_domain: "a.com".into() }.severity(), Severity::High);
+    assert_eq!(EndpointFlag::SensitiveData.severity(), Severity::High);
+    assert_eq!(EndpointFlag::KnownTracker.severity(), Severity::Medium);
+}
