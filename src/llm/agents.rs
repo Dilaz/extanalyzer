@@ -303,10 +303,10 @@ fn build_endpoint_prompt(endpoints: &[Endpoint]) -> String {
                     lines.push(format!("  Decoded string: {}", decoded));
                 }
 
-                if trace.partial {
-                    if let Some(ref err) = trace.error {
-                        lines.push(format!("  (Sandbox partial: {})", err));
-                    }
+                if trace.partial
+                    && let Some(ref err) = trace.error
+                {
+                    lines.push(format!("  (Sandbox partial: {})", err));
                 }
             }
 
