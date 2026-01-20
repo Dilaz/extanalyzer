@@ -1,5 +1,6 @@
 use crate::models::{
-    Category, DataSource, Endpoint, EndpointContext, Finding, HttpMethod, Location, Severity,
+    Category, DarkPatternType, DataSource, Endpoint, EndpointContext, EndpointFlag, Finding,
+    HttpMethod, Location, Severity,
 };
 use once_cell::sync::Lazy;
 use oxc_allocator::Allocator;
@@ -817,11 +818,45 @@ impl<'a> JsAnalyzer<'a> {
             endpoint = endpoint.with_method(HttpMethod::Get);
         }
 
-        endpoint = endpoint
+        let mut endpoint = endpoint
             .with_data_sources(data_sources)
             .with_context(classify_url(&url));
 
+        // Check for cross-domain data transfer
+        self.check_cross_domain_transfer(&mut endpoint);
+
         self.endpoints.push(endpoint);
+    }
+
+    /// Check if endpoint receives data from a different domain and flag it
+    fn check_cross_domain_transfer(&mut self, endpoint: &mut Endpoint) {
+        let target_domain = extract_domain(&endpoint.url);
+
+        for source in &endpoint.data_sources {
+            if let DataSource::NetworkResponse(source_domain) = source
+                && source_domain != &target_domain
+                && !is_same_root_domain(source_domain, &target_domain)
+            {
+                // Add flag to endpoint
+                endpoint.flags.push(EndpointFlag::CrossDomainTransfer {
+                    source_domain: source_domain.clone(),
+                });
+
+                // Create a finding
+                self.findings.push(
+                    Finding::new(
+                        Severity::High,
+                        Category::DarkPattern(DarkPatternType::DataExfiltration),
+                        "Cross-domain data transfer detected",
+                    )
+                    .with_description(format!(
+                        "Data from {} is being sent to {}",
+                        source_domain, target_domain
+                    ))
+                    .with_location(endpoint.location.clone()),
+                );
+            }
+        }
     }
 
     /// Check for chrome.* and browser.* API calls
@@ -1062,6 +1097,27 @@ fn extract_domain(url: &str) -> String {
         .next()
         .unwrap_or(url)
         .to_string()
+}
+
+/// Check if two domains have the same root domain (e.g., api.google.com and mail.google.com)
+fn is_same_root_domain(domain1: &str, domain2: &str) -> bool {
+    let parts1: Vec<_> = domain1.split('.').collect();
+    let parts2: Vec<_> = domain2.split('.').collect();
+
+    if parts1.len() >= 2 && parts2.len() >= 2 {
+        let root1 = format!(
+            "{}.{}",
+            parts1[parts1.len() - 2],
+            parts1[parts1.len() - 1]
+        );
+        let root2 = format!(
+            "{}.{}",
+            parts2[parts2.len() - 2],
+            parts2[parts2.len() - 1]
+        );
+        return root1 == root2;
+    }
+    false
 }
 
 /// Classify a URL based on its domain and path

