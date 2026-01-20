@@ -3,7 +3,7 @@ use rig::client::CompletionClient;
 use rig::completion::Prompt;
 
 use super::LlmClient;
-use crate::models::{Category, Endpoint, Extension, Finding, Severity};
+use crate::models::{Category, DarkPatternType, Endpoint, Extension, Finding, Severity};
 
 /// Different types of analysis tasks that can be performed by the LLM
 #[derive(Debug, Clone)]
@@ -18,6 +18,8 @@ pub enum AnalysisTask {
     FinalSummary,
     /// Deobfuscate a JavaScript snippet using sandbox execution
     Deobfuscate(String),
+    /// Review extension for dark patterns (deceptive UX practices)
+    DarkPatternReview,
 }
 
 /// Results from LLM analysis
@@ -130,6 +132,9 @@ fn build_prompt(
         AnalysisTask::EndpointAnalysis => build_endpoint_prompt(endpoints),
         AnalysisTask::FinalSummary => build_summary_prompt(extension, static_findings, endpoints),
         AnalysisTask::Deobfuscate(snippet) => build_deobfuscate_prompt(snippet),
+        AnalysisTask::DarkPatternReview => {
+            build_dark_pattern_prompt(extension, static_findings, endpoints)
+        }
     }
 }
 
@@ -417,6 +422,101 @@ Based on these results, explain what this code is trying to do. Is it malicious?
     )
 }
 
+/// Build prompt for dark pattern review
+fn build_dark_pattern_prompt(
+    extension: &Extension,
+    static_findings: &[Finding],
+    endpoints: &[Endpoint],
+) -> String {
+    let manifest_desc = extension
+        .manifest
+        .as_ref()
+        .and_then(|m| m.description.as_ref())
+        .map(|d| d.as_str())
+        .unwrap_or("No description");
+
+    let name = extension.name.as_deref().unwrap_or("Unknown");
+
+    // Filter to dark pattern findings
+    let dp_findings: Vec<_> = static_findings
+        .iter()
+        .filter(|f| matches!(f.category, Category::DarkPattern(_)))
+        .collect();
+
+    let findings_text = if dp_findings.is_empty() {
+        "No static dark patterns detected.".to_string()
+    } else {
+        dp_findings
+            .iter()
+            .map(|f| format!("- {}: {}", f.title, f.description))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    // Summarize endpoints with data sources
+    let endpoints_text = endpoints
+        .iter()
+        .filter(|e| !e.data_sources.is_empty() || !e.flags.is_empty())
+        .take(20) // Limit to avoid token overflow
+        .map(|e| {
+            let sources = e
+                .data_sources
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let flags = e
+                .flags
+                .iter()
+                .map(|f| f.description())
+                .collect::<Vec<_>>()
+                .join("; ");
+            format!(
+                "- {} -> {}\n  Data: [{}]\n  Flags: {}",
+                e.method
+                    .as_ref()
+                    .map(|m| m.as_str())
+                    .unwrap_or("GET"),
+                e.url,
+                if sources.is_empty() { "none" } else { &sources },
+                if flags.is_empty() { "none" } else { &flags }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        r#"You are analyzing a browser extension for dark patterns - deceptive practices that manipulate users against their interests.
+
+Extension: {name}
+Stated purpose: {manifest_desc}
+
+== Static Analysis Flags ==
+{findings_text}
+
+== Data Flow Summary ==
+{endpoints_text}
+
+== Questions to Answer ==
+
+1. MONETIZATION: Does this extension inject affiliate links, ads, or modify prices/search results without clear disclosure?
+
+2. PRIVACY: Does the data collection align with the stated purpose? Is any data sent to unexpected third parties?
+
+3. MANIPULATION: Are there patterns designed to nag, pressure, or trick users (fake urgency, hidden subscription prompts, review begging)?
+
+4. BAIT-AND-SWITCH: Does the actual behavior match what's promised in the name and description?
+
+For each dark pattern found, respond with:
+- TYPE: [category]
+- SEVERITY: [low/medium/high/critical]
+- EVIDENCE: [specific code or behavior]
+- EXPLANATION: [why this harms users]
+
+If no dark patterns are found, say "No dark patterns detected" and briefly explain why the extension appears legitimate."#
+    )
+}
+
 /// Parse LLM response to extract findings
 fn parse_findings(response: &str, task: &AnalysisTask) -> Vec<Finding> {
     let mut findings = Vec::new();
@@ -554,6 +654,9 @@ fn task_to_category(task: &AnalysisTask) -> Category {
         AnalysisTask::EndpointAnalysis => Category::Network,
         AnalysisTask::FinalSummary => Category::ApiUsage,
         AnalysisTask::Deobfuscate(_) => Category::Obfuscation,
+        AnalysisTask::DarkPatternReview => {
+            Category::DarkPattern(DarkPatternType::HiddenFunctionality)
+        }
     }
 }
 
