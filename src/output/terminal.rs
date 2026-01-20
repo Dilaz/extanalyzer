@@ -3,11 +3,11 @@ use crate::models::{DataSource, Endpoint, EndpointContext, EndpointFlag, Extensi
 use colored::*;
 use std::collections::HashMap;
 
-pub fn print_analysis_result(extension: &Extension, result: &AnalysisResult) {
+pub fn print_analysis_result(extension: &Extension, result: &AnalysisResult, min_severity: Severity) {
     print_header(extension);
-    print_permissions_section(&result.findings);
-    print_code_findings_section(&result.findings);
-    print_dark_patterns_section(&result.findings);
+    print_permissions_section(&result.findings, &min_severity);
+    print_code_findings_section(&result.findings, &min_severity);
+    print_dark_patterns_section(&result.findings, &min_severity);
     print_endpoints_section(&result.endpoints);
 
     if let Some(ref summary) = result.llm_summary {
@@ -42,10 +42,11 @@ fn print_header(extension: &Extension) {
     println!();
 }
 
-fn print_permissions_section(findings: &[Finding]) {
+fn print_permissions_section(findings: &[Finding], min_severity: &Severity) {
     let permission_findings: Vec<_> = findings
         .iter()
         .filter(|f| matches!(f.category, crate::models::Category::Permission))
+        .filter(|f| f.severity <= *min_severity)
         .collect();
 
     if permission_findings.is_empty() {
@@ -64,11 +65,12 @@ fn print_permissions_section(findings: &[Finding]) {
     println!();
 }
 
-fn print_code_findings_section(findings: &[Finding]) {
+fn print_code_findings_section(findings: &[Finding], min_severity: &Severity) {
     let code_findings: Vec<_> = findings
         .iter()
         .filter(|f| !matches!(f.category, crate::models::Category::Permission))
         .filter(|f| !matches!(f.category, crate::models::Category::DarkPattern(_)))
+        .filter(|f| f.severity <= *min_severity)
         .collect();
 
     if code_findings.is_empty() {
@@ -126,10 +128,11 @@ fn print_finding(finding: &Finding) {
     println!();
 }
 
-fn print_dark_patterns_section(findings: &[Finding]) {
+fn print_dark_patterns_section(findings: &[Finding], min_severity: &Severity) {
     let dark_pattern_findings: Vec<_> = findings
         .iter()
         .filter(|f| matches!(f.category, crate::models::Category::DarkPattern(_)))
+        .filter(|f| f.severity <= *min_severity)
         .collect();
 
     if dark_pattern_findings.is_empty() {

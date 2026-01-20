@@ -12,7 +12,7 @@ use extanalyzer::input::{
     InputType, detect_input, extract_chrome_id_from_url, extract_firefox_slug_from_url,
 };
 use extanalyzer::llm::{AnalysisTask, LlmProvider, analyze_with_llm, create_provider};
-use extanalyzer::models::{Extension, ExtensionFile, ExtensionSource, FileType};
+use extanalyzer::models::{Extension, ExtensionFile, ExtensionSource, FileType, Severity};
 use extanalyzer::output::print_analysis_result;
 use extanalyzer::unpack;
 
@@ -48,6 +48,21 @@ struct Args {
     /// Keep extracted files after analysis
     #[arg(long)]
     keep_files: bool,
+
+    /// Minimum severity level to display (info, low, medium, high, critical)
+    #[arg(long, default_value = "info")]
+    min_severity: String,
+}
+
+fn parse_min_severity(s: &str) -> Severity {
+    match s.to_lowercase().as_str() {
+        "critical" => Severity::Critical,
+        "high" => Severity::High,
+        "medium" => Severity::Medium,
+        "low" => Severity::Low,
+        "info" => Severity::Info,
+        _ => Severity::Info,
+    }
 }
 
 #[tokio::main]
@@ -215,7 +230,8 @@ async fn analyze_single(args: &Args, input: &str) -> Result<()> {
     result.findings.sort_by(|a, b| a.severity.cmp(&b.severity));
 
     println!();
-    print_analysis_result(&extension, &result);
+    let min_severity = parse_min_severity(&args.min_severity);
+    print_analysis_result(&extension, &result, min_severity);
 
     // Cleanup
     if !args.keep_files {
