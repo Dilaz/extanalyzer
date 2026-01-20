@@ -60,3 +60,13 @@ fn test_detect_obfuscation() {
 
     assert!(findings.iter().any(|f| f.category == Category::Obfuscation));
 }
+
+#[test]
+fn test_data_source_display() {
+    use extanalyzer::models::DataSource;
+
+    assert_eq!(DataSource::Cookie(None).to_string(), "Cookie");
+    assert_eq!(DataSource::Cookie(Some("session".into())).to_string(), "Cookie(session)");
+    assert_eq!(DataSource::LocalStorage("userId".into()).to_string(), "localStorage(userId)");
+    assert_eq!(DataSource::NetworkResponse("api.example.com".into()).to_string(), "NetworkResponse(api.example.com)");
+}

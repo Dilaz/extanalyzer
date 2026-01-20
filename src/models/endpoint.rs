@@ -1,5 +1,45 @@
 use super::Location;
 
+/// Represents the origin of data used in network requests
+#[derive(Debug, Clone, PartialEq)]
+pub enum DataSource {
+    /// document.cookie access, optionally with specific cookie name
+    Cookie(Option<String>),
+    /// localStorage.getItem(key)
+    LocalStorage(String),
+    /// sessionStorage.getItem(key)
+    SessionStorage(String),
+    /// chrome.history.search results
+    BrowsingHistory,
+    /// DOM element content (e.g., querySelector(...).innerText)
+    DomElement(String),
+    /// User input field value
+    UserInput(String),
+    /// location.href, location.pathname, etc.
+    Location(String),
+    /// Data fetched from another URL
+    NetworkResponse(String),
+    /// Untracked variable
+    Unknown(String),
+}
+
+impl std::fmt::Display for DataSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DataSource::Cookie(None) => write!(f, "Cookie"),
+            DataSource::Cookie(Some(name)) => write!(f, "Cookie({})", name),
+            DataSource::LocalStorage(key) => write!(f, "localStorage({})", key),
+            DataSource::SessionStorage(key) => write!(f, "sessionStorage({})", key),
+            DataSource::BrowsingHistory => write!(f, "BrowsingHistory"),
+            DataSource::DomElement(selector) => write!(f, "DOM({})", selector),
+            DataSource::UserInput(field) => write!(f, "UserInput({})", field),
+            DataSource::Location(prop) => write!(f, "location.{}", prop),
+            DataSource::NetworkResponse(url) => write!(f, "NetworkResponse({})", url),
+            DataSource::Unknown(name) => write!(f, "{}", name),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum HttpMethod {
     Get,
