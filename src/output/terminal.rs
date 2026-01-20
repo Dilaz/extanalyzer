@@ -7,6 +7,7 @@ pub fn print_analysis_result(extension: &Extension, result: &AnalysisResult) {
     print_header(extension);
     print_permissions_section(&result.findings);
     print_code_findings_section(&result.findings);
+    print_dark_patterns_section(&result.findings);
     print_endpoints_section(&result.endpoints);
 
     if let Some(ref summary) = result.llm_summary {
@@ -67,6 +68,7 @@ fn print_code_findings_section(findings: &[Finding]) {
     let code_findings: Vec<_> = findings
         .iter()
         .filter(|f| !matches!(f.category, crate::models::Category::Permission))
+        .filter(|f| !matches!(f.category, crate::models::Category::DarkPattern(_)))
         .collect();
 
     if code_findings.is_empty() {
@@ -119,6 +121,28 @@ fn print_finding(finding: &Finding) {
         for line in snippet.lines().take(3) {
             println!("              │ {}", line.bright_cyan());
         }
+    }
+
+    println!();
+}
+
+fn print_dark_patterns_section(findings: &[Finding]) {
+    let dark_pattern_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| matches!(f.category, crate::models::Category::DarkPattern(_)))
+        .collect();
+
+    if dark_pattern_findings.is_empty() {
+        return;
+    }
+
+    println!(
+        "{}",
+        "── Dark Patterns ────────────────────────────────────────────".bright_black()
+    );
+
+    for finding in dark_pattern_findings {
+        print_finding(finding);
     }
 
     println!();
