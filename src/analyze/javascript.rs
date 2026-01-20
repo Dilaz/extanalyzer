@@ -216,6 +216,36 @@ impl<'a> JsAnalyzer<'a> {
         None
     }
 
+    /// Check if expression is a DOM access that returns user input or DOM content
+    /// e.g., document.getElementById('x').value -> UserInput("x")
+    /// e.g., document.querySelector('.x').innerText -> DomElement(".x")
+    fn check_dom_access(&self, expr: &Expression<'_>) -> Option<DataSource> {
+        // Check for document.getElementById('x').value pattern
+        if let Expression::StaticMemberExpression(member) = expr {
+            // Check for .value (user input)
+            if member.property.name == "value"
+                && let Expression::CallExpression(call) = &member.object
+                && let Some(chain) = self.get_member_chain(&call.callee)
+                && chain == ["document", "getElementById"]
+                && let Some(Argument::StringLiteral(lit)) = call.arguments.first()
+            {
+                return Some(DataSource::UserInput(lit.value.to_string()));
+            }
+
+            // Check for .innerText or .textContent (DOM content)
+            if (member.property.name == "innerText" || member.property.name == "textContent")
+                && let Expression::CallExpression(call) = &member.object
+                && let Some(chain) = self.get_member_chain(&call.callee)
+                && (chain == ["document", "querySelector"]
+                    || chain == ["document", "querySelectorAll"])
+                && let Some(Argument::StringLiteral(lit)) = call.arguments.first()
+            {
+                return Some(DataSource::DomElement(lit.value.to_string()));
+            }
+        }
+        None
+    }
+
     /// Extract data sources from an expression (variable reference, object, etc.)
     fn extract_data_sources(&self, expr: &Expression<'_>) -> Vec<DataSource> {
         match expr {
@@ -291,10 +321,11 @@ impl<'a> JsAnalyzer<'a> {
                         }
                         // Check for member expression sources like document.cookie or location.href
                         if let Expression::StaticMemberExpression(_) = init {
-                            // Try cookie first, then location
+                            // Try cookie, then location, then DOM access
                             let source = self
                                 .check_cookie_access(init)
-                                .or_else(|| self.check_location_access(init));
+                                .or_else(|| self.check_location_access(init))
+                                .or_else(|| self.check_dom_access(init));
 
                             if let Some(source) = source
                                 && let oxc_ast::ast::BindingPattern::BindingIdentifier(ident) =
