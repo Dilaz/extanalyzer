@@ -124,11 +124,13 @@ fn maybe_add_invocation(code: &str) -> String {
     if (code.starts_with("const ") || code.starts_with("let "))
         && let Some(eq_pos) = code.find('=')
     {
-        let name = code[4..eq_pos]
+        let name_with_keyword = &code[..eq_pos];
+        let name = name_with_keyword
             .trim()
             .trim_start_matches("const ")
-            .trim_start_matches("let ");
-        if code[eq_pos..].contains("=>") {
+            .trim_start_matches("let ")
+            .trim();
+        if !name.is_empty() && code[eq_pos..].contains("=>") {
             let params = count_parameters(code);
             let args = generate_dummy_args(params);
             return format!("{}\n{}({});", code, name, args);
@@ -224,6 +226,8 @@ mod tests {
         let code = "const submit = (a, b) => { fetch(a); }";
         let result = maybe_add_invocation(code);
         assert!(result.contains("submit(\"test\", 12345);"));
+        // Ensure no corrupted name like "t submit(" from off-by-one error
+        assert!(!result.contains("t submit("));
     }
 
     #[test]
