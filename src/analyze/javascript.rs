@@ -174,6 +174,35 @@ impl<'a> JsAnalyzer<'a> {
         None
     }
 
+    /// Check if expression is a location.* access (location.href, window.location.href, etc.)
+    fn check_location_access(&self, expr: &Expression<'_>) -> Option<DataSource> {
+        if let Some(chain) = self.get_member_chain(expr) {
+            // Handle both "location.href" and "window.location.href"
+            if chain.len() >= 2 {
+                let first = &chain[0];
+                // Direct location access: location.href
+                if first == "location" {
+                    let prop = chain.last().unwrap();
+                    if ["href", "pathname", "search", "hash", "hostname", "origin"]
+                        .contains(&prop.as_str())
+                    {
+                        return Some(DataSource::Location(prop.clone()));
+                    }
+                }
+                // window.location access: window.location.href
+                if first == "window" && chain.len() >= 3 && chain[1] == "location" {
+                    let prop = chain.last().unwrap();
+                    if ["href", "pathname", "search", "hash", "hostname", "origin"]
+                        .contains(&prop.as_str())
+                    {
+                        return Some(DataSource::Location(prop.clone()));
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Extract data sources from an expression (variable reference, object, etc.)
     fn extract_data_sources(&self, expr: &Expression<'_>) -> Vec<DataSource> {
         match expr {
@@ -225,12 +254,19 @@ impl<'a> JsAnalyzer<'a> {
                         {
                             self.source_tracker.bind(&ident.name, vec![source]);
                         }
-                        // Check for member expression sources like document.cookie
-                        if let Expression::StaticMemberExpression(_) = init
-                            && let Some(source) = self.check_cookie_access(init)
-                            && let oxc_ast::ast::BindingPattern::BindingIdentifier(ident) = &decl.id
-                        {
-                            self.source_tracker.bind(&ident.name, vec![source]);
+                        // Check for member expression sources like document.cookie or location.href
+                        if let Expression::StaticMemberExpression(_) = init {
+                            // Try cookie first, then location
+                            let source = self
+                                .check_cookie_access(init)
+                                .or_else(|| self.check_location_access(init));
+
+                            if let Some(source) = source
+                                && let oxc_ast::ast::BindingPattern::BindingIdentifier(ident) =
+                                    &decl.id
+                            {
+                                self.source_tracker.bind(&ident.name, vec![source]);
+                            }
                         }
                         self.visit_expression(init);
                     }

