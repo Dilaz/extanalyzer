@@ -50,7 +50,7 @@ struct Args {
     keep_files: bool,
 
     /// Minimum severity level to display (info, low, medium, high, critical)
-    #[arg(long, default_value = "info")]
+    #[arg(long, default_value = "medium")]
     min_severity: String,
 }
 
@@ -61,7 +61,7 @@ fn parse_min_severity(s: &str) -> Severity {
         "medium" => Severity::Medium,
         "low" => Severity::Low,
         "info" => Severity::Info,
-        _ => Severity::Info,
+        _ => Severity::Medium,
     }
 }
 
