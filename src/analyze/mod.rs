@@ -29,14 +29,8 @@ pub async fn analyze_extension(extension: &Extension) -> Result<AnalysisResult> 
             let (js_findings, js_endpoints) = javascript::analyze_javascript(content, &file.path);
             findings.extend(js_findings);
             endpoints.extend(js_endpoints);
-        }
-    }
 
-    // Run dark pattern analysis on JavaScript files
-    for file in &extension.files {
-        if let crate::models::FileType::JavaScript = file.file_type
-            && let Some(ref content) = file.content
-        {
+            // Also run dark pattern analysis
             let dp_findings = dark_patterns::analyze_dark_patterns(content, &file.path);
             findings.extend(dp_findings);
         }
