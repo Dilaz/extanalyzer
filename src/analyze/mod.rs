@@ -1,3 +1,4 @@
+pub mod dark_patterns;
 pub mod javascript;
 pub mod manifest;
 pub mod patterns;
