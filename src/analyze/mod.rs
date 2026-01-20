@@ -38,6 +38,13 @@ pub async fn analyze_extension(extension: &Extension) -> Result<AnalysisResult> 
         }
     }
 
+    // Run sandbox analysis on endpoints with unknown data sources
+    sandbox_analysis::analyze_endpoints_with_sandbox(
+        &mut endpoints,
+        &extension.files,
+        &sandbox_analysis::SandboxAnalysisConfig::default(),
+    );
+
     Ok(AnalysisResult {
         findings,
         endpoints,
