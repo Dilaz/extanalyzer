@@ -21,7 +21,76 @@ impl Severity {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// Types of dark patterns that can be detected
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DarkPatternType {
+    // Monetization
+    AffiliateInjection,
+    AdInjection,
+    SearchHijacking,
+
+    // Privacy
+    HiddenTracking,
+    ExcessiveCollection,
+    Fingerprinting,
+    DataExfiltration,
+
+    // Manipulation
+    ReviewNagging,
+    NotificationSpam,
+    FakeUrgency,
+    DisguisedAds,
+
+    // Bait-and-switch
+    PermissionCreep,
+    HiddenFunctionality,
+    MisleadingDescription,
+}
+
+impl DarkPatternType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DarkPatternType::AffiliateInjection => "Affiliate Injection",
+            DarkPatternType::AdInjection => "Ad Injection",
+            DarkPatternType::SearchHijacking => "Search Hijacking",
+            DarkPatternType::HiddenTracking => "Hidden Tracking",
+            DarkPatternType::ExcessiveCollection => "Excessive Collection",
+            DarkPatternType::Fingerprinting => "Fingerprinting",
+            DarkPatternType::DataExfiltration => "Data Exfiltration",
+            DarkPatternType::ReviewNagging => "Review Nagging",
+            DarkPatternType::NotificationSpam => "Notification Spam",
+            DarkPatternType::FakeUrgency => "Fake Urgency",
+            DarkPatternType::DisguisedAds => "Disguised Ads",
+            DarkPatternType::PermissionCreep => "Permission Creep",
+            DarkPatternType::HiddenFunctionality => "Hidden Functionality",
+            DarkPatternType::MisleadingDescription => "Misleading Description",
+        }
+    }
+
+    pub fn category_name(&self) -> &'static str {
+        match self {
+            DarkPatternType::AffiliateInjection
+            | DarkPatternType::AdInjection
+            | DarkPatternType::SearchHijacking => "Monetization",
+
+            DarkPatternType::HiddenTracking
+            | DarkPatternType::ExcessiveCollection
+            | DarkPatternType::Fingerprinting
+            | DarkPatternType::DataExfiltration => "Privacy",
+
+            DarkPatternType::ReviewNagging
+            | DarkPatternType::NotificationSpam
+            | DarkPatternType::FakeUrgency
+            | DarkPatternType::DisguisedAds => "Manipulation",
+
+            DarkPatternType::PermissionCreep
+            | DarkPatternType::HiddenFunctionality
+            | DarkPatternType::MisleadingDescription => "Bait-and-Switch",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Category {
     Permission,
     ApiUsage,
@@ -29,6 +98,7 @@ pub enum Category {
     Obfuscation,
     Cryptography,
     DataAccess,
+    DarkPattern(DarkPatternType),
 }
 
 impl Category {
@@ -40,6 +110,7 @@ impl Category {
             Category::Obfuscation => "Obfuscation",
             Category::Cryptography => "Cryptography",
             Category::DataAccess => "Data Access",
+            Category::DarkPattern(_) => "Dark Pattern",
         }
     }
 }

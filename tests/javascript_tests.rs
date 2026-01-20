@@ -79,3 +79,12 @@ fn test_endpoint_flag_severity() {
     assert_eq!(EndpointFlag::SensitiveData.severity(), Severity::High);
     assert_eq!(EndpointFlag::KnownTracker.severity(), Severity::Medium);
 }
+
+#[test]
+fn test_dark_pattern_type_category() {
+    use extanalyzer::models::{DarkPatternType, Category};
+
+    let dp = DarkPatternType::AffiliateInjection;
+    let cat = Category::DarkPattern(dp);
+    assert_eq!(cat.as_str(), "Dark Pattern");
+}
