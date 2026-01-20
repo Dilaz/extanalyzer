@@ -36,10 +36,13 @@ pub fn analyze_endpoints_with_sandbox(
     let file_contents: HashMap<_, _> = files
         .iter()
         .filter_map(|f| {
-            if matches!(f.file_type, FileType::JavaScript)
-                && f.content.as_ref().map(|c| c.len()).unwrap_or(0) <= config.max_file_size
-            {
-                f.content.as_ref().map(|c| (f.path.clone(), c.clone()))
+            if matches!(f.file_type, FileType::JavaScript) {
+                let content_len = f.content.as_ref().map(|c| c.len()).unwrap_or(0);
+                if content_len <= config.max_file_size && content_len > 0 {
+                    f.content.as_ref().map(|c| (f.path.clone(), c.clone()))
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -97,15 +100,26 @@ pub fn analyze_endpoints_with_sandbox(
 fn run_snippet_in_sandbox(snippet: &ExtractedSnippet, timeout_ms: u64) -> SandboxTrace {
     // Add a function call if the snippet looks like a function definition
     let code_to_run = maybe_add_invocation(&snippet.code);
-
     let result = execute_snippet(&code_to_run, timeout_ms);
-
     convert_sandbox_result(result)
 }
 
 /// If the code is a function definition, add a call to invoke it
 fn maybe_add_invocation(code: &str) -> String {
     let code = code.trim();
+
+    // Check for async function declaration: async function name(...)
+    if code.starts_with("async function ")
+        && let Some(name_start) = code.find("function ")
+        && let Some(name_end) = code[name_start + 9..].find('(')
+    {
+        let name = code[name_start + 9..name_start + 9 + name_end].trim();
+        if !name.is_empty() {
+            let params = count_parameters(code);
+            let args = generate_dummy_args(params);
+            return format!("{}\n{}({});", code, name, args);
+        }
+    }
 
     // Check for function declaration: function name(...)
     if code.starts_with("function ")
@@ -135,6 +149,22 @@ fn maybe_add_invocation(code: &str) -> String {
             let args = generate_dummy_args(params);
             return format!("{}\n{}({});", code, name, args);
         }
+    }
+
+    // Check for anonymous arrow function: async () => {...} or () => {...}
+    // The code may be indented, so check trimmed version
+    let trimmed = code.trim();
+    if (trimmed.starts_with("async () =>")
+        || trimmed.starts_with("async() =>")
+        || trimmed.starts_with("() =>"))
+        && !trimmed.starts_with("const ")
+        && !trimmed.starts_with("let ")
+    {
+        // Wrap in IIFE - but need to provide mock request object for handler callbacks
+        return format!(
+            "const request = {{ assetId: 12345, assetType: 'gamepass', userId: 99999, items: [] }};\n({})();",
+            trimmed
+        );
     }
 
     code.to_string()
@@ -222,6 +252,13 @@ mod tests {
     }
 
     #[test]
+    fn test_maybe_add_invocation_async_function() {
+        let code = "async function sendData(x) { await fetch(x); }";
+        let result = maybe_add_invocation(code);
+        assert!(result.contains("sendData(\"test\");"));
+    }
+
+    #[test]
     fn test_maybe_add_invocation_arrow() {
         let code = "const submit = (a, b) => { fetch(a); }";
         let result = maybe_add_invocation(code);
@@ -235,6 +272,15 @@ mod tests {
         let code = "function getData() { fetch('/api'); }";
         let result = maybe_add_invocation(code);
         assert!(result.contains("getData();"));
+    }
+
+    #[test]
+    fn test_maybe_add_invocation_anonymous_arrow() {
+        let code = "async () => { await fetch('/api'); }";
+        let result = maybe_add_invocation(code);
+        assert!(result.contains("const request ="));
+        // IIFE format: (async () => {...})();
+        assert!(result.contains("})();"));
     }
 
     #[test]

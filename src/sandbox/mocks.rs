@@ -78,7 +78,14 @@ String.fromCharCode = function() {
 // Mock fetch
 globalThis.fetch = function(url, options) {
     __recordCall('fetch', [url, options || {}]);
-    return Promise.resolve({ ok: false, status: 0, text: function() { return Promise.resolve(''); } });
+    return Promise.resolve({
+        ok: true,
+        status: 200,
+        text: function() { return Promise.resolve(''); },
+        json: function() { return Promise.resolve({}); },
+        blob: function() { return Promise.resolve(new Blob()); },
+        arrayBuffer: function() { return Promise.resolve(new ArrayBuffer(0)); }
+    });
 };
 
 // Mock XMLHttpRequest

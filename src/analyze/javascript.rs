@@ -392,6 +392,14 @@ impl<'a> JsAnalyzer<'a> {
                                 self.source_tracker.bind(&ident.name, vec![source]);
                             }
                         }
+                        // Handle simple identifier assignments: let y = x
+                        if let Expression::Identifier(source_ident) = init
+                            && let oxc_ast::ast::BindingPattern::BindingIdentifier(target_ident) =
+                                &decl.id
+                        {
+                            self.source_tracker
+                                .propagate(&source_ident.name, &target_ident.name);
+                        }
                         self.visit_expression(init);
                     }
                 }

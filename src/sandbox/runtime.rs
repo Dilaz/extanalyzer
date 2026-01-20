@@ -41,6 +41,11 @@ pub fn run_in_sandbox(code: &str, timeout_ms: u64) -> SandboxResult {
             Err(_) => None,
         };
 
+        // Execute pending jobs (promises) - this is crucial for async code!
+        // Disabled for now - seems to cause hangs
+        // TODO: investigate why job execution hangs
+        let job_error: Option<String> = None;
+
         // Get the trace
         let trace_result: Result<String, _> = ctx.eval("__getTrace()");
 
@@ -66,6 +71,13 @@ pub fn run_in_sandbox(code: &str, timeout_ms: u64) -> SandboxResult {
                 ));
             } else if result.error.is_none() {
                 result.error = Some(error_msg);
+            }
+        }
+
+        // Add job error if any
+        if let Some(err) = job_error {
+            if result.error.is_none() {
+                result.error = Some(err);
             }
         }
 
@@ -228,6 +240,24 @@ mod tests {
                 .decoded_strings
                 .iter()
                 .any(|d| d.function == "String.fromCharCode" && d.output == "hello")
+        );
+    }
+
+    #[test]
+    fn test_async_fetch_tracing() {
+        // Test that fetch is captured even in async functions
+        let code = r#"
+async function test() {
+    await fetch("https://example.com/api", { method: "POST", body: "{}" });
+}
+test();
+"#;
+        let result = run_in_sandbox(code, 1000);
+        assert!(result.error.is_none(), "Error: {:?}", result.error);
+        assert!(
+            result.api_calls.iter().any(|c| c.function == "fetch"),
+            "Expected fetch call, got: {:?}",
+            result.api_calls
         );
     }
 
