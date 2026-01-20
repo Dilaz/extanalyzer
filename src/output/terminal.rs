@@ -226,6 +226,47 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
             println!("        Sends: {}", sources_str.yellow());
         }
 
+        // Print sandbox trace if available
+        for ep in &endpoint_group {
+            if let Some(ref trace) = ep.sandbox_trace {
+                // Show traced fetch calls
+                for fetch in &trace.fetch_calls {
+                    let method = fetch.method.as_deref().unwrap_or("GET");
+                    let body_str = fetch.body.as_ref()
+                        .map(|b| {
+                            let truncated = if b.len() > 100 {
+                                format!("{}...", &b[..100])
+                            } else {
+                                b.clone()
+                            };
+                            format!(" body={}", truncated)
+                        })
+                        .unwrap_or_default();
+                    println!("        {} {} {}{}",
+                        "Traced:".bright_blue(),
+                        method.cyan(),
+                        fetch.url.bright_white(),
+                        body_str.yellow()
+                    );
+                }
+
+                // Show decoded strings
+                for decoded in &trace.decoded_strings {
+                    let truncated = if decoded.len() > 80 {
+                        format!("{}...", &decoded[..80])
+                    } else {
+                        decoded.clone()
+                    };
+                    println!("        {} {}", "Decoded:".bright_blue(), truncated.yellow());
+                }
+
+                // Show error if partial
+                if let Some(ref err) = trace.error {
+                    println!("        {} {}", "Sandbox:".bright_black(), err.bright_black());
+                }
+            }
+        }
+
         // Print flags if any
         for flag in all_flags {
             let flag_str = match flag {
