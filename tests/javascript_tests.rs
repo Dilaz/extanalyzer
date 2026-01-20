@@ -96,12 +96,16 @@ fn test_source_tracker_local_storage() {
         fetch('https://api.example.com/track', { body: userId });
     "#;
 
-    let (findings, endpoints) = extanalyzer::analyze::javascript::analyze_javascript(
+    let (_findings, endpoints) = extanalyzer::analyze::javascript::analyze_javascript(
         code,
         std::path::Path::new("test.js"),
     );
 
     assert!(!endpoints.is_empty());
-    let endpoint = endpoints.iter().find(|e| e.url.contains("api.example.com")).unwrap();
+    // Find the endpoint that has data sources (from the fetch call, not the string literal)
+    let endpoint = endpoints
+        .iter()
+        .find(|e| e.url.contains("api.example.com") && !e.data_sources.is_empty())
+        .unwrap();
     assert!(endpoint.data_sources.iter().any(|s| matches!(s, extanalyzer::models::DataSource::LocalStorage(k) if k == "user_id")));
 }

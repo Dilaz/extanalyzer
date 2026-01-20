@@ -132,34 +132,62 @@ impl<'a> JsAnalyzer<'a> {
 
     /// Check if this call is a storage access and track it
     fn check_storage_access(&self, call_expr: &CallExpression<'_>) -> Option<DataSource> {
-        if let Some(chain) = self.get_member_chain(&call_expr.callee) {
-            if chain.len() >= 2 {
-                let obj = &chain[0];
-                let method = &chain[1];
+        if let Some(chain) = self.get_member_chain(&call_expr.callee)
+            && chain.len() >= 2
+        {
+            let obj = &chain[0];
+            let method = &chain[1];
 
-                if method == "getItem" {
-                    // Get the key from first argument
-                    let key = call_expr
-                        .arguments
-                        .first()
-                        .and_then(|arg| {
-                            if let Argument::StringLiteral(lit) = arg {
-                                Some(lit.value.to_string())
-                            } else {
-                                Some("*".to_string())
-                            }
-                        })
-                        .unwrap_or_else(|| "*".to_string());
+            if method == "getItem" {
+                // Get the key from first argument
+                let key = call_expr
+                    .arguments
+                    .first()
+                    .map(|arg| {
+                        if let Argument::StringLiteral(lit) = arg {
+                            lit.value.to_string()
+                        } else {
+                            "*".to_string()
+                        }
+                    })
+                    .unwrap_or_else(|| "*".to_string());
 
-                    match obj.as_str() {
-                        "localStorage" => return Some(DataSource::LocalStorage(key)),
-                        "sessionStorage" => return Some(DataSource::SessionStorage(key)),
-                        _ => {}
-                    }
+                match obj.as_str() {
+                    "localStorage" => return Some(DataSource::LocalStorage(key)),
+                    "sessionStorage" => return Some(DataSource::SessionStorage(key)),
+                    _ => {}
                 }
             }
         }
         None
+    }
+
+    /// Extract data sources from an expression (variable reference, object, etc.)
+    fn extract_data_sources(&self, expr: &Expression<'_>) -> Vec<DataSource> {
+        match expr {
+            Expression::Identifier(ident) => self.source_tracker.lookup(&ident.name),
+            Expression::ObjectExpression(obj) => {
+                let mut sources = Vec::new();
+                for prop in &obj.properties {
+                    if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(prop) = prop {
+                        sources.extend(self.extract_data_sources(&prop.value));
+                    }
+                }
+                sources
+            }
+            Expression::CallExpression(call) => {
+                // Check for JSON.stringify(x)
+                if let Some(chain) = self.get_member_chain(&call.callee)
+                    && chain == ["JSON", "stringify"]
+                    && let Some(arg) = call.arguments.first()
+                    && let Some(expr) = arg.as_expression()
+                {
+                    return self.extract_data_sources(expr);
+                }
+                Vec::new()
+            }
+            _ => Vec::new(),
+        }
     }
 
     /// Visit a program (entry point)
@@ -179,15 +207,11 @@ impl<'a> JsAnalyzer<'a> {
                 for decl in &var_decl.declarations {
                     if let Some(ref init) = decl.init {
                         // Check if init is a call expression that returns a data source
-                        if let Expression::CallExpression(call_expr) = init {
-                            if let Some(source) = self.check_storage_access(call_expr) {
-                                // Get variable name
-                                if let oxc_ast::ast::BindingPattern::BindingIdentifier(ident) =
-                                    &decl.id
-                                {
-                                    self.source_tracker.bind(&ident.name, vec![source]);
-                                }
-                            }
+                        if let Expression::CallExpression(call_expr) = init
+                            && let Some(source) = self.check_storage_access(call_expr)
+                            && let oxc_ast::ast::BindingPattern::BindingIdentifier(ident) = &decl.id
+                        {
+                            self.source_tracker.bind(&ident.name, vec![source]);
                         }
                         self.visit_expression(init);
                     }
@@ -556,35 +580,70 @@ impl<'a> JsAnalyzer<'a> {
     /// Handle fetch() calls and extract endpoints
     fn handle_fetch_call(&mut self, call_expr: &CallExpression<'_>) {
         // Get the first argument (URL)
-        if let Some(first_arg) = call_expr.arguments.first() {
-            if let Argument::StringLiteral(lit) = first_arg {
-                let url = lit.value.to_string();
-                let mut endpoint =
-                    Endpoint::new(url.clone(), self.location_from_span(call_expr.span));
-
-                // Check for method in second argument (options object)
-                if call_expr.arguments.len() > 1 {
-                    // Default to POST if there's an options object with body
-                    endpoint = endpoint.with_method(HttpMethod::Post);
-                } else {
-                    endpoint = endpoint.with_method(HttpMethod::Get);
+        let url = if let Some(first_arg) = call_expr.arguments.first() {
+            match first_arg {
+                Argument::StringLiteral(lit) => Some(lit.value.to_string()),
+                Argument::TemplateLiteral(tmpl) => {
+                    tmpl.quasis.first().map(|q| q.value.raw.to_string())
                 }
-
-                // Classify the endpoint
-                endpoint = endpoint.with_context(classify_url(&url));
-                self.endpoints.push(endpoint);
-            } else if let Argument::Identifier(ident) = first_arg {
-                // Variable reference - we can't resolve it but note the fetch call
-                self.findings.push(
-                    Finding::new(
-                        Severity::Info,
-                        Category::Network,
-                        format!("fetch() call with variable: {}", ident.name),
-                    )
-                    .with_location(self.location_from_span(call_expr.span)),
-                );
+                _ => None,
             }
+        } else {
+            None
+        };
+
+        let Some(url) = url else { return };
+
+        let mut endpoint = Endpoint::new(url.clone(), self.location_from_span(call_expr.span));
+        let mut data_sources = Vec::new();
+
+        if call_expr.arguments.len() > 1 {
+            if let Some(Argument::ObjectExpression(opts)) = call_expr.arguments.get(1) {
+                for prop in &opts.properties {
+                    if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(prop) = prop {
+                        let key = match &prop.key {
+                            oxc_ast::ast::PropertyKey::StaticIdentifier(ident) => {
+                                Some(ident.name.as_str())
+                            }
+                            _ => None,
+                        };
+
+                        match key {
+                            Some("method") => {
+                                if let Expression::StringLiteral(lit) = &prop.value {
+                                    endpoint = endpoint.with_method(
+                                        match lit.value.to_uppercase().as_str() {
+                                            "GET" => HttpMethod::Get,
+                                            "POST" => HttpMethod::Post,
+                                            "PUT" => HttpMethod::Put,
+                                            "DELETE" => HttpMethod::Delete,
+                                            "PATCH" => HttpMethod::Patch,
+                                            other => HttpMethod::Other(other.to_string()),
+                                        },
+                                    );
+                                }
+                            }
+                            Some("body") => {
+                                // Track what data is being sent
+                                data_sources.extend(self.extract_data_sources(&prop.value));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            if endpoint.method.is_none() {
+                endpoint = endpoint.with_method(HttpMethod::Post);
+            }
+        } else {
+            endpoint = endpoint.with_method(HttpMethod::Get);
         }
+
+        endpoint = endpoint
+            .with_data_sources(data_sources)
+            .with_context(classify_url(&url));
+
+        self.endpoints.push(endpoint);
     }
 
     /// Check for chrome.* and browser.* API calls
