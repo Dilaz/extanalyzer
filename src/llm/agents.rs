@@ -269,15 +269,51 @@ fn build_endpoint_prompt(endpoints: &[Endpoint]) -> String {
         .iter()
         .take(20) // Limit to avoid token issues
         .map(|e| {
-            format!(
+            let mut lines = vec![format!(
                 "- {} {} (found at {})",
                 e.method.as_ref().map(|m| m.as_str()).unwrap_or("?"),
                 e.url,
                 e.location
-            )
+            )];
+
+            // Add static analysis data sources
+            if !e.data_sources.is_empty() {
+                let sources: Vec<_> = e.data_sources.iter().map(|s| s.to_string()).collect();
+                lines.push(format!("  Static analysis: sends {}", sources.join(", ")));
+            }
+
+            // Add sandbox trace if available
+            if let Some(ref trace) = e.sandbox_trace {
+                for fetch in &trace.fetch_calls {
+                    let method = fetch.method.as_deref().unwrap_or("GET");
+                    let body_info = fetch.body.as_ref()
+                        .map(|b| {
+                            let truncated = if b.len() > 200 {
+                                format!("{}...", &b[..200])
+                            } else {
+                                b.clone()
+                            };
+                            format!(", body={}", truncated)
+                        })
+                        .unwrap_or_default();
+                    lines.push(format!("  Sandbox trace: {} {}{}", method, fetch.url, body_info));
+                }
+
+                for decoded in &trace.decoded_strings {
+                    lines.push(format!("  Decoded string: {}", decoded));
+                }
+
+                if trace.partial {
+                    if let Some(ref err) = trace.error {
+                        lines.push(format!("  (Sandbox partial: {})", err));
+                    }
+                }
+            }
+
+            lines.join("\n")
         })
         .collect::<Vec<_>>()
-        .join("\n");
+        .join("\n\n");
 
     let endpoints_text = if endpoints_text.is_empty() {
         "No endpoints discovered".to_string()
@@ -298,6 +334,7 @@ Look for:
 4. Command and control (C2) patterns
 5. Unusual API endpoints that don't match the extension's stated purpose
 6. Data exfiltration endpoints
+7. Sensitive data in request bodies (from sandbox traces)
 
 For each finding, respond in this format:
 FINDING: [SEVERITY] - [TITLE]
