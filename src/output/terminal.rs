@@ -1,9 +1,15 @@
 use crate::analyze::AnalysisResult;
-use crate::models::{DataSource, Endpoint, EndpointContext, EndpointFlag, Extension, Finding, Severity};
+use crate::models::{
+    DataSource, Endpoint, EndpointContext, EndpointFlag, Extension, Finding, Severity,
+};
 use colored::*;
 use std::collections::HashMap;
 
-pub fn print_analysis_result(extension: &Extension, result: &AnalysisResult, min_severity: Severity) {
+pub fn print_analysis_result(
+    extension: &Extension,
+    result: &AnalysisResult,
+    min_severity: Severity,
+) {
     print_header(extension);
     print_permissions_section(&result.findings, &min_severity);
     print_code_findings_section(&result.findings, &min_severity);
@@ -118,6 +124,12 @@ fn print_finding(finding: &Finding) {
         }
     }
 
+    if let Some(ref reasoning) = finding.review_reasoning {
+        for line in textwrap::wrap(reasoning, 56) {
+            println!("            {} {}", "Agent:".bright_blue(), line);
+        }
+    }
+
     if let Some(ref snippet) = finding.code_snippet {
         println!();
         for line in snippet.lines().take(3) {
@@ -164,14 +176,25 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
     // Group by URL
     let mut grouped: HashMap<String, Vec<&Endpoint>> = HashMap::new();
     for endpoint in endpoints {
-        grouped.entry(endpoint.url.clone()).or_default().push(endpoint);
+        grouped
+            .entry(endpoint.url.clone())
+            .or_default()
+            .push(endpoint);
     }
 
     // Sort by context severity (most suspicious first)
     let mut sorted: Vec<_> = grouped.into_iter().collect();
     sorted.sort_by(|a, b| {
-        let max_a = a.1.iter().map(|e| context_severity(&e.context)).max().unwrap_or(0);
-        let max_b = b.1.iter().map(|e| context_severity(&e.context)).max().unwrap_or(0);
+        let max_a =
+            a.1.iter()
+                .map(|e| context_severity(&e.context))
+                .max()
+                .unwrap_or(0);
+        let max_b =
+            b.1.iter()
+                .map(|e| context_severity(&e.context))
+                .max()
+                .unwrap_or(0);
         max_b.cmp(&max_a).then_with(|| a.0.cmp(&b.0))
     });
 
@@ -186,9 +209,19 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
         let mut context = EndpointContext::Unknown;
 
         for ep in &endpoint_group {
-            let method = ep.method.as_ref().map(|m| m.as_str()).unwrap_or("GET").to_string();
-            let loc = format!("{}:{}",
-                ep.location.file.file_name().and_then(|n| n.to_str()).unwrap_or("unknown"),
+            let method = ep
+                .method
+                .as_ref()
+                .map(|m| m.as_str())
+                .unwrap_or("GET")
+                .to_string();
+            let loc = format!(
+                "{}:{}",
+                ep.location
+                    .file
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown"),
                 ep.location.line.unwrap_or(0)
             );
             methods.entry(method).or_default().push(loc);
@@ -217,12 +250,21 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
             } else {
                 format!("(×{} calls)", locations.len())
             };
-            println!("    {} {:<6} {}", "→".bright_black(), method.cyan(), loc_str.bright_black());
+            println!(
+                "    {} {:<6} {}",
+                "→".bright_black(),
+                method.cyan(),
+                loc_str.bright_black()
+            );
         }
 
         // Print data sources if any
         if !all_sources.is_empty() {
-            let sources_str = all_sources.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(", ");
+            let sources_str = all_sources
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
             println!("        Sends: {}", sources_str.yellow());
         }
 
@@ -232,7 +274,9 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
                 // Show traced fetch calls
                 for fetch in &trace.fetch_calls {
                     let method = fetch.method.as_deref().unwrap_or("GET");
-                    let body_str = fetch.body.as_ref()
+                    let body_str = fetch
+                        .body
+                        .as_ref()
                         .map(|b| {
                             let truncated = if b.len() > 100 {
                                 format!("{}...", &b[..100])
@@ -242,7 +286,8 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
                             format!(" body={}", truncated)
                         })
                         .unwrap_or_default();
-                    println!("        {} {} {}{}",
+                    println!(
+                        "        {} {} {}{}",
                         "Traced:".bright_blue(),
                         method.cyan(),
                         fetch.url.bright_white(),
@@ -257,12 +302,20 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
                     } else {
                         decoded.clone()
                     };
-                    println!("        {} {}", "Decoded:".bright_blue(), truncated.yellow());
+                    println!(
+                        "        {} {}",
+                        "Decoded:".bright_blue(),
+                        truncated.yellow()
+                    );
                 }
 
                 // Show error if partial
                 if let Some(ref err) = trace.error {
-                    println!("        {} {}", "Sandbox:".bright_black(), err.bright_black());
+                    println!(
+                        "        {} {}",
+                        "Sandbox:".bright_black(),
+                        err.bright_black()
+                    );
                 }
             }
         }
@@ -271,7 +324,9 @@ fn print_endpoints_section(endpoints: &[Endpoint]) {
         for flag in all_flags {
             let flag_str = match flag {
                 EndpointFlag::CrossDomainTransfer { source_domain } => {
-                    format!("⚠ Cross-domain transfer from {}", source_domain).red().to_string()
+                    format!("⚠ Cross-domain transfer from {}", source_domain)
+                        .red()
+                        .to_string()
                 }
                 EndpointFlag::SensitiveData => "⚠ Receives sensitive data".red().to_string(),
                 EndpointFlag::KnownTracker => "● Known tracker".yellow().to_string(),
