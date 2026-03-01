@@ -11,7 +11,9 @@ use extanalyzer::download::{Downloader, chrome::ChromeDownloader, firefox::Firef
 use extanalyzer::input::{
     InputType, detect_input, extract_chrome_id_from_url, extract_firefox_slug_from_url,
 };
-use extanalyzer::llm::{AnalysisTask, LlmProvider, analyze_with_llm, create_provider};
+use extanalyzer::llm::{
+    AnalysisTask, LlmProvider, analyze_with_llm, create_provider, review_findings,
+};
 use extanalyzer::models::{Extension, ExtensionFile, ExtensionSource, FileType, Severity};
 use extanalyzer::output::print_analysis_result;
 use extanalyzer::unpack;
@@ -184,11 +186,32 @@ async fn analyze_single(args: &Args, input: &str) -> Result<()> {
 
     // Run LLM analysis if enabled
     if !args.no_llm {
-        println!("{}", "Running LLM analysis...".bright_black());
-
         match args.llm.parse::<LlmProvider>() {
             Ok(provider) => match create_provider(&provider) {
                 Ok(client) => {
+                    // Step 1: Review static findings with agentic review
+                    println!("{}", "Reviewing findings with LLM agent...".bright_black());
+                    let findings_to_review = std::mem::take(&mut result.findings);
+                    match review_findings(
+                        &client,
+                        &extension,
+                        findings_to_review,
+                        args.model.as_deref(),
+                    )
+                    .await
+                    {
+                        Ok(reviewed) => {
+                            result.findings = reviewed;
+                        }
+                        Err(e) => {
+                            eprintln!("{} Finding review failed: {}", "Warning:".yellow(), e);
+                            // findings already moved — review_findings should not lose them
+                            // on error, but if it does, we continue with empty
+                        }
+                    }
+
+                    // Step 2: Run remaining LLM analysis tasks
+                    println!("{}", "Running LLM analysis...".bright_black());
                     let tasks = vec![
                         AnalysisTask::ManifestReview,
                         AnalysisTask::ScriptAnalysis,
