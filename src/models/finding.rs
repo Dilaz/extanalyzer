@@ -143,6 +143,7 @@ pub struct Finding {
     pub description: String,
     pub location: Option<Location>,
     pub code_snippet: Option<String>,
+    pub review_reasoning: Option<String>,
 }
 
 impl Finding {
@@ -154,6 +155,7 @@ impl Finding {
             description: String::new(),
             location: None,
             code_snippet: None,
+            review_reasoning: None,
         }
     }
 
@@ -169,6 +171,11 @@ impl Finding {
 
     pub fn with_snippet(mut self, snippet: impl Into<String>) -> Self {
         self.code_snippet = Some(snippet.into());
+        self
+    }
+
+    pub fn with_review_reasoning(mut self, reasoning: impl Into<String>) -> Self {
+        self.review_reasoning = Some(reasoning.into());
         self
     }
 }
