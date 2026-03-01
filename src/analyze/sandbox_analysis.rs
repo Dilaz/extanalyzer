@@ -189,11 +189,13 @@ fn generate_dummy_args(count: usize) -> String {
     if count == 0 {
         return String::new();
     }
+    // Use simple string/number values that work well with .toString()
+    // Avoid objects like {} which become "[object Object]"
     (0..count)
         .map(|i| match i % 3 {
-            0 => "\"test\"".to_string(),
+            0 => "\"test_arg1\"".to_string(),
             1 => "12345".to_string(),
-            _ => "{}".to_string(),
+            _ => "67890".to_string(),
         })
         .collect::<Vec<_>>()
         .join(", ")
@@ -248,21 +250,21 @@ mod tests {
     fn test_maybe_add_invocation_function() {
         let code = "function sendData(x) { fetch(x); }";
         let result = maybe_add_invocation(code);
-        assert!(result.contains("sendData(\"test\");"));
+        assert!(result.contains("sendData(\"test_arg1\");"));
     }
 
     #[test]
     fn test_maybe_add_invocation_async_function() {
         let code = "async function sendData(x) { await fetch(x); }";
         let result = maybe_add_invocation(code);
-        assert!(result.contains("sendData(\"test\");"));
+        assert!(result.contains("sendData(\"test_arg1\");"));
     }
 
     #[test]
     fn test_maybe_add_invocation_arrow() {
         let code = "const submit = (a, b) => { fetch(a); }";
         let result = maybe_add_invocation(code);
-        assert!(result.contains("submit(\"test\", 12345);"));
+        assert!(result.contains("submit(\"test_arg1\", 12345);"));
         // Ensure no corrupted name like "t submit(" from off-by-one error
         assert!(!result.contains("t submit("));
     }
@@ -293,9 +295,9 @@ mod tests {
     #[test]
     fn test_generate_dummy_args() {
         assert_eq!(generate_dummy_args(0), "");
-        assert_eq!(generate_dummy_args(1), "\"test\"");
-        assert_eq!(generate_dummy_args(2), "\"test\", 12345");
-        assert_eq!(generate_dummy_args(3), "\"test\", 12345, {}");
+        assert_eq!(generate_dummy_args(1), "\"test_arg1\"");
+        assert_eq!(generate_dummy_args(2), "\"test_arg1\", 12345");
+        assert_eq!(generate_dummy_args(3), "\"test_arg1\", 12345, 67890");
     }
 
     #[test]

@@ -215,7 +215,7 @@ async fn review_single_finding(
                 .build();
             let response = agent
                 .prompt(finding_prompt)
-                .multi_turn(MAX_TOOL_CALLS)
+                .max_turns(MAX_TOOL_CALLS)
                 .await?;
             Ok(response)
         }
@@ -231,7 +231,7 @@ async fn review_single_finding(
                 .build();
             let response = agent
                 .prompt(finding_prompt)
-                .multi_turn(MAX_TOOL_CALLS)
+                .max_turns(MAX_TOOL_CALLS)
                 .await?;
             Ok(response)
         }
@@ -247,7 +247,7 @@ async fn review_single_finding(
                 .build();
             let response = agent
                 .prompt(finding_prompt)
-                .multi_turn(MAX_TOOL_CALLS)
+                .max_turns(MAX_TOOL_CALLS)
                 .await?;
             Ok(response)
         }
