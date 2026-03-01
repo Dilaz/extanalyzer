@@ -75,10 +75,10 @@ pub fn run_in_sandbox(code: &str, timeout_ms: u64) -> SandboxResult {
         }
 
         // Add job error if any
-        if let Some(err) = job_error {
-            if result.error.is_none() {
-                result.error = Some(err);
-            }
+        if let Some(err) = job_error
+            && result.error.is_none()
+        {
+            result.error = Some(err);
         }
 
         result
