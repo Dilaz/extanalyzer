@@ -76,7 +76,7 @@ pub fn parse_verdict(text: &str) -> Option<Verdict> {
 
     match action {
         "confirm" => Some(Verdict::Confirm { reasoning }),
-        "adjust_severity" => {
+        "downgrade" | "adjust_severity" => {
             let sev_str = value.get("new_severity")?.as_str()?;
             let new_severity = parse_severity(sev_str)?;
             Some(Verdict::Downgrade {
