@@ -128,7 +128,7 @@ fn build_prompt(
 ) -> String {
     match task {
         AnalysisTask::ManifestReview => build_manifest_prompt(extension),
-        AnalysisTask::ScriptAnalysis => build_script_prompt(extension, static_findings),
+        AnalysisTask::ScriptAnalysis => build_script_prompt(extension),
         AnalysisTask::EndpointAnalysis => build_endpoint_prompt(endpoints),
         AnalysisTask::FinalSummary => build_summary_prompt(extension, static_findings, endpoints),
         AnalysisTask::Deobfuscate(snippet) => build_deobfuscate_prompt(snippet),
@@ -175,7 +175,7 @@ If no security concerns are found, respond with "NO_FINDINGS"."#,
 }
 
 /// Build prompt for script analysis
-fn build_script_prompt(extension: &Extension, static_findings: &[Finding]) -> String {
+fn build_script_prompt(extension: &Extension) -> String {
     let scripts: Vec<String> = extension
         .files
         .iter()
@@ -199,41 +199,6 @@ fn build_script_prompt(extension: &Extension, static_findings: &[Finding]) -> St
         scripts.join("\n\n---\n\n")
     };
 
-    // Collect obfuscation findings with snippets for the LLM to deobfuscate
-    let obfuscation_snippets: Vec<String> = static_findings
-        .iter()
-        .filter(|f| f.category == Category::Obfuscation)
-        .filter_map(|f| {
-            f.code_snippet.as_ref().map(|snippet| {
-                let location = f
-                    .location
-                    .as_ref()
-                    .map(|l| {
-                        let line = l.line.map(|n| n.to_string()).unwrap_or_default();
-                        format!(" ({}:{})", l.file.display(), line)
-                    })
-                    .unwrap_or_default();
-                format!("- {}{}: ```{}```", f.title, location, snippet)
-            })
-        })
-        .collect();
-
-    let obfuscation_section = if obfuscation_snippets.is_empty() {
-        String::new()
-    } else {
-        format!(
-            r#"
-
-STATIC ANALYSIS DETECTED OBFUSCATION - Please deobfuscate these snippets:
-{}
-
-For each snippet above, respond with:
-DEOBFUSCATE: <the exact code snippet>
-"#,
-            obfuscation_snippets.join("\n")
-        )
-    };
-
     format!(
         r#"You are a browser extension security analyst. Analyze these JavaScript files for suspicious patterns.
 
@@ -248,10 +213,6 @@ Look for:
 6. Cryptocurrency mining code
 7. Remote code loading
 
-IMPORTANT: When you see obfuscated code like String.fromCharCode(...), atob(...), or hex-encoded strings,
-you can ask to deobfuscate them by responding:
-DEOBFUSCATE: <the exact code snippet>
-{}
 For each finding, respond in this format:
 FINDING: [SEVERITY] - [TITLE]
 DESCRIPTION: [Brief description of what the code is doing and why it's concerning]
@@ -259,7 +220,7 @@ DESCRIPTION: [Brief description of what the code is doing and why it's concernin
 Severity levels: CRITICAL, HIGH, MEDIUM, LOW, INFO
 
 If no security concerns are found, respond with "NO_FINDINGS"."#,
-        scripts_text, obfuscation_section
+        scripts_text
     )
 }
 
@@ -286,7 +247,9 @@ fn build_endpoint_prompt(endpoints: &[Endpoint]) -> String {
             if let Some(ref trace) = e.sandbox_trace {
                 for fetch in &trace.fetch_calls {
                     let method = fetch.method.as_deref().unwrap_or("GET");
-                    let body_info = fetch.body.as_ref()
+                    let body_info = fetch
+                        .body
+                        .as_ref()
                         .map(|b| {
                             let truncated = if b.len() > 200 {
                                 format!("{}...", &b[..200])
@@ -296,7 +259,10 @@ fn build_endpoint_prompt(endpoints: &[Endpoint]) -> String {
                             format!(", body={}", truncated)
                         })
                         .unwrap_or_default();
-                    lines.push(format!("  Sandbox trace: {} {}{}", method, fetch.url, body_info));
+                    lines.push(format!(
+                        "  Sandbox trace: {} {}{}",
+                        method, fetch.url, body_info
+                    ));
                 }
 
                 for decoded in &trace.decoded_strings {
@@ -510,10 +476,7 @@ fn build_dark_pattern_prompt(
                 .join("; ");
             format!(
                 "- {} -> {}\n  Data: [{}]\n  Flags: {}",
-                e.method
-                    .as_ref()
-                    .map(|m| m.as_str())
-                    .unwrap_or("GET"),
+                e.method.as_ref().map(|m| m.as_str()).unwrap_or("GET"),
                 e.url,
                 if sources.is_empty() { "none" } else { &sources },
                 if flags.is_empty() { "none" } else { &flags }
@@ -561,49 +524,6 @@ fn parse_findings(response: &str, task: &AnalysisTask) -> Vec<Finding> {
     if response.contains("NO_FINDINGS") {
         return findings;
     }
-
-    // Check for deobfuscation requests
-    for line in response.lines() {
-        let line = line.trim();
-        if line.starts_with("DEOBFUSCATE:") {
-            let snippet = line.strip_prefix("DEOBFUSCATE:").unwrap_or("").trim();
-            if !snippet.is_empty() {
-                // Run sandbox and add result as a finding
-                use crate::sandbox::execute_snippet;
-                let result = execute_snippet(snippet, 2000);
-
-                let description = if !result.decoded_strings.is_empty() {
-                    let decoded: Vec<String> = result
-                        .decoded_strings
-                        .iter()
-                        .map(|d| format!("'{}' → '{}'", d.input, d.output))
-                        .collect();
-                    format!("Deobfuscated: {}", decoded.join(", "))
-                } else if !result.api_calls.is_empty() {
-                    let calls: Vec<String> = result
-                        .api_calls
-                        .iter()
-                        .map(|c| c.function.clone())
-                        .collect();
-                    format!("API calls traced: {}", calls.join(", "))
-                } else {
-                    "No decodable content found".to_string()
-                };
-
-                findings.push(
-                    Finding::new(
-                        Severity::Info,
-                        Category::Obfuscation,
-                        "Deobfuscation result",
-                    )
-                    .with_description(description)
-                    .with_snippet(snippet.to_string()),
-                );
-            }
-        }
-    }
-
-    // Continue with existing FINDING: parsing below...
     let lines: Vec<&str> = response.lines().collect();
     let mut i = 0;
 
