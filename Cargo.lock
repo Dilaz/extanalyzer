@@ -767,6 +767,7 @@ dependencies = [
  "reqwest 0.13.1",
  "rig-core",
  "rquickjs",
+ "schemars",
  "serde",
  "serde_json",
  "tempfile",
